@@ -10,6 +10,13 @@ export type AuthWsEvent = {
   sessionId?: string;
   address?: string;
   token?: string;
+  refreshToken?: string;
+};
+
+export type RefreshAuthResponse = {
+  token: string;
+  refreshToken: string;
+  address: string;
 };
 
 export const createAuthSession = async (apiBase: string): Promise<AuthSessionResponse> => {
@@ -18,8 +25,16 @@ export const createAuthSession = async (apiBase: string): Promise<AuthSessionRes
     throw new Error(`Create session failed: ${response.status}`);
   }
 
-  const data = (await response.json()) as AuthSessionResponse;
-  if (!data.sessionId || !data.nonce) {
+  const raw = (await response.json()) as
+    | AuthSessionResponse
+    | { success?: boolean; data?: AuthSessionResponse };
+
+  const data =
+    raw && typeof raw === 'object' && 'data' in raw && raw.data
+      ? (raw.data as AuthSessionResponse)
+      : (raw as AuthSessionResponse);
+
+  if (!data?.sessionId || !data?.nonce) {
     throw new Error('Invalid session response');
   }
 
@@ -62,4 +77,35 @@ export const openAuthLoginSocket = (
   ws.onclose = () => onState('closed');
 
   return ws;
+};
+
+export const refreshAuthToken = async (apiBase: string, refreshToken: string): Promise<RefreshAuthResponse> => {
+  const response = await fetch(`${apiBase}/v1/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Refresh token failed: ${response.status}`);
+  }
+
+  const raw = (await response.json()) as
+    | RefreshAuthResponse
+    | { success?: boolean; data?: RefreshAuthResponse };
+
+  const data =
+    raw && typeof raw === 'object' && 'data' in raw && raw.data
+      ? (raw.data as RefreshAuthResponse)
+      : (raw as RefreshAuthResponse);
+
+  if (!data?.token || !data?.refreshToken) {
+    throw new Error('Invalid refresh response');
+  }
+
+  return {
+    token: data.token,
+    refreshToken: data.refreshToken,
+    address: data.address ?? '',
+  };
 };

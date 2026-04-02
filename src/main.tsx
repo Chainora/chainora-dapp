@@ -4,6 +4,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { WagmiProvider } from 'wagmi';
 
 import { wagmiConfig } from './configs/wagmi';
+import { AuthProvider } from './context/AuthContext';
 import { InitiaEVMProvider } from './providers/InitiaEVMProvider';
 import { AppQueryProvider } from './query/provider';
 import { router } from './router';
@@ -13,9 +14,11 @@ createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
     <InitiaEVMProvider>
       <WagmiProvider config={wagmiConfig}>
-        <AppQueryProvider>
-          <RouterProvider router={router} />
-        </AppQueryProvider>
+        <AuthProvider>
+          <AppQueryProvider>
+            <RouterProvider router={router} />
+          </AppQueryProvider>
+        </AuthProvider>
       </WagmiProvider>
     </InitiaEVMProvider>
   </StrictMode>,

@@ -1,6 +1,8 @@
 import { Link, Outlet, createRootRoute } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 
+import { HeaderLoginButton } from '../components/auth/HeaderLoginButton';
+
 function RootLayout() {
   return (
     <div className="min-h-screen bg-chainora-bg">
@@ -9,12 +11,13 @@ function RootLayout() {
           <Link to="/" className="font-semibold text-slate-900" activeProps={{ className: 'text-sky-600 font-semibold' }}>
             Chainora
           </Link>
-          <Link to="/auth" className="text-slate-600" activeProps={{ className: 'text-sky-600 font-semibold' }}>
-            QR Login
-          </Link>
           <Link to="/dashboard" className="text-slate-600" activeProps={{ className: 'text-sky-600 font-semibold' }}>
             Dashboard
           </Link>
+
+          <div className="ml-auto">
+            <HeaderLoginButton />
+          </div>
         </nav>
       </header>
 

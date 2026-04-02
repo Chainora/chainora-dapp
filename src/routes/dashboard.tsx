@@ -1,13 +1,13 @@
 import { Navigate, createFileRoute } from '@tanstack/react-router';
-import { useAccount } from 'wagmi';
 
+import { useAuth } from '../context/AuthContext';
 import { DashboardPage } from '../pages/dashboard';
 
 function ProtectedDashboard() {
-  const { isConnected } = useAccount();
+  const { isAuthenticated } = useAuth();
 
-  if (!isConnected) {
-    return <Navigate to="/auth" />;
+  if (!isAuthenticated) {
+    return <Navigate to="/" />;
   }
 
   return <DashboardPage />;
