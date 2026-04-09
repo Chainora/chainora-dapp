@@ -7,12 +7,14 @@ type AuthState = {
   token: string;
   refreshToken: string;
   address: string;
+  username?: string;
 };
 
 type AuthContextValue = {
   token: string;
   refreshToken: string;
   address: string;
+  username: string;
   isAuthenticated: boolean;
   setAuthenticated: (next: AuthState) => void;
   refreshSession: () => Promise<string>;
@@ -27,8 +29,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState('');
   const [refreshToken, setRefreshToken] = useState('');
   const [address, setAddress] = useState('');
+  const [username, setUsername] = useState('');
   const refreshTokenRef = useRef('');
   const addressRef = useRef('');
+  const usernameRef = useRef('');
   const refreshInFlightRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
@@ -48,6 +52,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (typeof parsed.address === 'string') {
         setAddress(parsed.address);
       }
+      if (typeof parsed.username === 'string') {
+        setUsername(parsed.username);
+      }
     } catch {
       window.localStorage.removeItem(AUTH_STORAGE_KEY);
     }
@@ -57,6 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(next.token);
     setRefreshToken(next.refreshToken);
     setAddress(next.address);
+    setUsername(next.username ?? '');
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
   };
 
@@ -64,15 +72,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken('');
     setRefreshToken('');
     setAddress('');
+    setUsername('');
     refreshTokenRef.current = '';
     addressRef.current = '';
+    usernameRef.current = '';
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
   useEffect(() => {
     refreshTokenRef.current = refreshToken;
     addressRef.current = address;
-  }, [refreshToken, address]);
+    usernameRef.current = username;
+  }, [refreshToken, address, username]);
 
   const attemptRefresh = async (): Promise<string> => {
     const currentRefreshToken = refreshTokenRef.current;
@@ -85,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token: next.token,
       refreshToken: next.refreshToken,
       address: next.address || addressRef.current,
+      username: usernameRef.current,
     });
 
     return next.token;
@@ -137,12 +149,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       refreshToken,
       address,
+      username,
       isAuthenticated: Boolean(token),
       setAuthenticated,
       refreshSession,
       logout,
     }),
-    [token, refreshToken, address],
+    [token, refreshToken, address, username],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

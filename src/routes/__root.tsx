@@ -14,6 +14,9 @@ function RootLayout() {
           <Link to="/dashboard" className="text-slate-600" activeProps={{ className: 'text-sky-600 font-semibold' }}>
             Dashboard
           </Link>
+          <Link to="/profile" className="text-slate-600" activeProps={{ className: 'text-sky-600 font-semibold' }}>
+            Profile
+          </Link>
 
           <div className="ml-auto">
             <HeaderLoginButton />

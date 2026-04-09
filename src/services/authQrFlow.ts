@@ -9,6 +9,7 @@ export type AuthWsEvent = {
   status?: string;
   sessionId?: string;
   address?: string;
+  username?: string;
   token?: string;
   refreshToken?: string;
 };

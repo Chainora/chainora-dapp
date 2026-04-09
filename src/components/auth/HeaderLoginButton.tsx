@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { chainoraApiBase } from '../../configs/api';
+import { UserDetail } from '../UserDetail';
 import { useAuth } from '../../context/AuthContext';
 import {
   AuthSessionResponse,
@@ -8,24 +9,19 @@ import {
   createAuthSession,
   openAuthLoginSocket,
 } from '../../services/authQrFlow';
+import { resolvePrimaryInitiaUsername } from '../../services/initiaUsername';
 import { buildQrImageUrl } from '../../services/qrFlow';
 import { Button } from '../ui/Button';
 
-const shortenAddress = (address: string) => {
-  if (address.length < 12) {
-    return address;
-  }
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-};
-
 export function HeaderLoginButton() {
-  const { address, isAuthenticated, logout, setAuthenticated } = useAuth();
+  const { address, username, refreshToken, isAuthenticated, logout, setAuthenticated } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [session, setSession] = useState<AuthSessionResponse | null>(null);
   const [wsStatus, setWsStatus] = useState('idle');
   const wsRef = useRef<WebSocket | null>(null);
+  const isAwaitingCardScan = wsStatus === 'awaiting_card_scan';
 
   const qrPayload = useMemo(() => {
     if (!session) {
@@ -35,6 +31,18 @@ export function HeaderLoginButton() {
   }, [session]);
 
   const qrImageUrl = useMemo(() => buildQrImageUrl(qrPayload, 280), [qrPayload]);
+
+  const statusMessage = useMemo(() => {
+    if (wsStatus === 'awaiting_card_scan') {
+      return 'pls scan chainora card in your wallet to confirm';
+    }
+
+    if (wsStatus === 'verified') {
+      return 'Login confirmed';
+    }
+
+    return null;
+  }, [wsStatus]);
 
   const closeDialog = () => {
     setIsDialogOpen(false);
@@ -46,7 +54,45 @@ export function HeaderLoginButton() {
     wsRef.current = null;
   };
 
+  const syncUsernameAfterLogin = async (accessToken: string, walletAddress: string, existingUsername?: string) => {
+    const fromBackend = existingUsername?.trim() ?? '';
+    if (fromBackend) {
+      setAuthenticated({
+        token: accessToken,
+        refreshToken,
+        address: walletAddress,
+        username: fromBackend,
+      });
+      return;
+    }
+
+    const resolved = await resolvePrimaryInitiaUsername(walletAddress);
+    if (!resolved) {
+      return;
+    }
+
+    await fetch(`${chainoraApiBase}/v1/auth/profile`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ username: resolved }),
+    });
+
+    setAuthenticated({
+      token: accessToken,
+      refreshToken,
+      address: walletAddress,
+      username: resolved,
+    });
+  };
+
   const startQrLogin = async () => {
+    if (isAwaitingCardScan) {
+      return;
+    }
+
     setIsDialogOpen(true);
     setLoading(true);
     setError('');
@@ -64,12 +110,25 @@ export function HeaderLoginButton() {
         chainoraApiBase,
         createdSession.sessionId,
         payload => {
+          if (payload.status) {
+            setWsStatus(payload.status);
+          }
+
           if (payload.token && payload.refreshToken) {
+            const nextAddress = payload.address ?? '';
+            const nextUsername = payload.username ?? '';
+
             setAuthenticated({
               token: payload.token,
               refreshToken: payload.refreshToken,
-              address: payload.address ?? '',
+              address: nextAddress,
+              username: nextUsername,
             });
+
+            void syncUsernameAfterLogin(payload.token, nextAddress, nextUsername).catch(() => {
+              // Username enrichment is best-effort and must not block login.
+            });
+
             setWsStatus('verified');
             closeDialog();
             return;
@@ -108,9 +167,7 @@ export function HeaderLoginButton() {
   if (isAuthenticated) {
     return (
       <div className="flex items-center gap-3">
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
-          {address ? shortenAddress(address) : 'Card verified'}
-        </span>
+        <UserDetail username={username} address={address} />
         <Button type="button" variant="ghost" onClick={logout}>
           Logout
         </Button>
@@ -152,10 +209,15 @@ export function HeaderLoginButton() {
               <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Session Status</p>
               <p className="mt-1 text-sm font-semibold text-slate-900">{loading ? 'creating_session' : wsStatus}</p>
               {session ? <p className="mt-1 text-xs text-slate-500">Session: {session.sessionId}</p> : null}
+              {statusMessage ? <p className="mt-2 text-sm font-semibold text-sky-700">{statusMessage}</p> : null}
             </div>
 
             <div className="mt-5 grid min-h-[280px] place-items-center">
-              {qrImageUrl ? (
+              {wsStatus === 'awaiting_card_scan' ? (
+                <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-4 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
+                  pls scan card to login dapp
+                </div>
+              ) : qrImageUrl ? (
                 <img src={qrImageUrl} alt="Login QR" className="h-[260px] w-[260px] rounded-xl object-contain ring-1 ring-slate-200" />
               ) : (
                 <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
@@ -176,7 +238,7 @@ export function HeaderLoginButton() {
                 onClick={() => {
                   void startQrLogin();
                 }}
-                disabled={loading}
+                disabled={loading || isAwaitingCardScan}
               >
                 {loading ? 'Refreshing...' : 'Refresh QR'}
               </Button>
