@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { chainoraApiBase } from '../configs/api';
+import { UserDetail } from '../components/UserDetail';
+import { useAuth } from '../context/AuthContext';
 import { useAuthFetch } from '../hooks/useAuthFetch';
 import { useChainora } from '../hooks/useChainora';
 
@@ -11,6 +13,7 @@ type MeResponse = {
 
 export function DashboardPage() {
   const { authFetch } = useAuthFetch();
+  const { username, address } = useAuth();
   const { currentRound, isRoundLoading, isJoinPending, joinHui } = useChainora();
   const [identity, setIdentity] = useState<MeResponse | null>(null);
   const [identityError, setIdentityError] = useState('');
@@ -58,8 +61,10 @@ export function DashboardPage() {
       <p className="mt-2 text-slate-600">Protected workspace for rounds, members, and contributions.</p>
 
       <div className="mt-4 rounded-xl bg-slate-50 p-4">
-        <p className="text-sm text-slate-500">Authenticated Wallet</p>
-        <p className="mt-1 font-semibold text-slate-900">{identity?.address ?? 'Loading...'}</p>
+        <p className="text-sm text-slate-500">Authenticated User</p>
+        <div className="mt-1">
+          <UserDetail username={username} address={address || identity?.address} />
+        </div>
         {identity?.sessionId ? <p className="mt-1 text-xs text-slate-500">Session: {identity.sessionId}</p> : null}
         {identityError ? <p className="mt-2 text-sm text-rose-600">{identityError}</p> : null}
       </div>

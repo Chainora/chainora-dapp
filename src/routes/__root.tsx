@@ -1,9 +1,24 @@
-import { Link, Outlet, createRootRoute } from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { Link, Outlet, createRootRoute, useLocation } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 
 import { HeaderLoginButton } from '../components/auth/HeaderLoginButton';
+import { useAuth } from '../context/AuthContext';
 
 function RootLayout() {
+  const location = useLocation();
+  const { isAuthenticated, syncProfile } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
+    void syncProfile(false).catch(() => {
+      // Best-effort profile refresh on navigation.
+    });
+  }, [isAuthenticated, location.pathname, syncProfile]);
+
   return (
     <div className="min-h-screen bg-chainora-bg">
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">

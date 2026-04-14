@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 
 import { chainoraApiBase } from '../configs/api';
 import { refreshAuthToken } from '../services/authQrFlow';
+import { fetchAuthProfile, invalidateProfileCache } from '../services/profileService';
 
 type AuthState = {
   token: string;
@@ -18,6 +19,7 @@ type AuthContextValue = {
   isAuthenticated: boolean;
   setAuthenticated: (next: AuthState) => void;
   refreshSession: () => Promise<string>;
+  syncProfile: (force?: boolean) => Promise<void>;
   logout: () => void;
 };
 
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRefreshToken(next.refreshToken);
     setAddress(next.address);
     setUsername(next.username ?? '');
+    invalidateProfileCache();
     window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(next));
   };
 
@@ -76,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshTokenRef.current = '';
     addressRef.current = '';
     usernameRef.current = '';
+    invalidateProfileCache();
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
@@ -110,6 +114,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     return refreshInFlightRef.current;
+  };
+
+  const syncProfile = async (force = false): Promise<void> => {
+    if (!token) {
+      return;
+    }
+
+    const withAccessToken = (accessToken: string): RequestInit => {
+      const headers = new Headers();
+      headers.set('Authorization', `Bearer ${accessToken}`);
+      return { headers };
+    };
+
+    const authFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      let response = await fetch(input, {
+        ...init,
+        ...withAccessToken(token),
+        headers: {
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.status !== 401) {
+        return response;
+      }
+
+      const nextToken = await refreshSession();
+      response = await fetch(input, {
+        ...init,
+        ...withAccessToken(nextToken),
+        headers: {
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${nextToken}`,
+        },
+      });
+      return response;
+    };
+
+    const profile = await fetchAuthProfile(authFetch, force);
+    const normalizedUsername = profile.username?.trim() || '';
+    const normalizedAddress = profile.address?.trim() || address;
+
+    setAddress(normalizedAddress);
+    setUsername(normalizedUsername);
+
+    window.localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({
+        token,
+        refreshToken,
+        address: normalizedAddress,
+        username: normalizedUsername,
+      }),
+    );
   };
 
   useEffect(() => {
@@ -153,6 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: Boolean(token),
       setAuthenticated,
       refreshSession,
+      syncProfile,
       logout,
     }),
     [token, refreshToken, address, username],

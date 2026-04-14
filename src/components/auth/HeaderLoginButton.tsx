@@ -9,12 +9,11 @@ import {
   createAuthSession,
   openAuthLoginSocket,
 } from '../../services/authQrFlow';
-import { resolvePrimaryInitiaUsername } from '../../services/initiaUsername';
 import { buildQrImageUrl } from '../../services/qrFlow';
 import { Button } from '../ui/Button';
 
 export function HeaderLoginButton() {
-  const { address, username, refreshToken, isAuthenticated, logout, setAuthenticated } = useAuth();
+  const { address, username, isAuthenticated, logout, setAuthenticated, syncProfile } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -54,40 +53,6 @@ export function HeaderLoginButton() {
     wsRef.current = null;
   };
 
-  const syncUsernameAfterLogin = async (accessToken: string, walletAddress: string, existingUsername?: string) => {
-    const fromBackend = existingUsername?.trim() ?? '';
-    if (fromBackend) {
-      setAuthenticated({
-        token: accessToken,
-        refreshToken,
-        address: walletAddress,
-        username: fromBackend,
-      });
-      return;
-    }
-
-    const resolved = await resolvePrimaryInitiaUsername(walletAddress);
-    if (!resolved) {
-      return;
-    }
-
-    await fetch(`${chainoraApiBase}/v1/auth/profile`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ username: resolved }),
-    });
-
-    setAuthenticated({
-      token: accessToken,
-      refreshToken,
-      address: walletAddress,
-      username: resolved,
-    });
-  };
-
   const startQrLogin = async () => {
     if (isAwaitingCardScan) {
       return;
@@ -125,8 +90,8 @@ export function HeaderLoginButton() {
               username: nextUsername,
             });
 
-            void syncUsernameAfterLogin(payload.token, nextAddress, nextUsername).catch(() => {
-              // Username enrichment is best-effort and must not block login.
+            void syncProfile(true).catch(() => {
+              // Profile sync is best-effort and must not block login.
             });
 
             setWsStatus('verified');
