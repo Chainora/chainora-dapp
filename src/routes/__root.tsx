@@ -22,17 +22,15 @@ function RootLayout() {
   return (
     <div className="min-h-screen bg-chainora-bg">
       <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center gap-5 px-6 py-4 text-sm">
-          <Link to="/" className="font-semibold text-slate-900" activeProps={{ className: 'text-sky-600 font-semibold' }}>
-            Chainora
+        <nav className="mx-auto flex max-w-6xl items-center px-6 py-4 text-sm">
+          <Link to="/" className="flex items-center gap-2.5 font-semibold text-slate-900" activeProps={{ className: 'flex items-center gap-2.5 text-sky-600 font-semibold' }}>
+            <img
+              src="https://media.base44.com/images/public/69d29468e773ef42abd4ce42/e1097b18b_logo2.png"
+              alt="ICRosca"
+              className="h-8 w-8 rounded-xl object-cover"
+            />
+            <span>ICRosca</span>
           </Link>
-          <Link to="/dashboard" className="text-slate-600" activeProps={{ className: 'text-sky-600 font-semibold' }}>
-            Dashboard
-          </Link>
-          <Link to="/profile" className="text-slate-600" activeProps={{ className: 'text-sky-600 font-semibold' }}>
-            Profile
-          </Link>
-
           <div className="ml-auto">
             <HeaderLoginButton />
           </div>

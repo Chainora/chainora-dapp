@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Navigate } from '@tanstack/react-router';
 
 import { chainoraApiBase } from '../configs/api';
 import { useAuthFetch } from '../hooks/useAuthFetch';
 import { Button } from '../components/ui/Button';
+import { useAuth } from '../context/AuthContext';
 import { fetchChainoraBalance } from '../services/chainoraBalance';
 import { buildQrImageUrl, buildQrPayload } from '../services/qrFlow';
 import { createUsernameRelayerPayload, openUsernameRelayerSocket } from '../services/usernameRelayer';
@@ -43,6 +45,7 @@ const sanitizeRelayerErrorMessage = (raw: string): string => {
 };
 
 export function ProfilePage() {
+  const { isAuthenticated } = useAuth();
   const { authFetch } = useAuthFetch();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [registerUsername, setRegisterUsername] = useState('');
@@ -61,6 +64,10 @@ export function ProfilePage() {
   const hasUsername = Boolean(normalizeProfileUsername(profile?.username));
   const tcnrSymbol = (import.meta.env.VITE_CHAINORA_CURRENCY_SYMBOL?.trim() || 'tCNR').toUpperCase();
   const isAwaitingCardScan = relayerWsState === 'awaiting_card_scan';
+
+  if (!isAuthenticated) {
+    return <Navigate to="/" />;
+  }
 
   const refreshProfile = useCallback(
     async (showGlobalLoading: boolean, clearMessages: boolean) => {
@@ -109,8 +116,12 @@ export function ProfilePage() {
   );
 
   useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+
     void refreshProfile(true, true);
-  }, [refreshProfile]);
+  }, [isAuthenticated, refreshProfile]);
 
   useEffect(() => {
     if (!relayerSessionId) {
