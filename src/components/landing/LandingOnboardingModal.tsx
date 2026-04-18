@@ -27,7 +27,7 @@ const STEPS: StepDefinition[] = [
     subtitle: 'Start in a few guided steps.',
     bullets: [
       'Create or join a ROSCA circle.',
-      'Contribute iUSDT on each round.',
+      'Contribute tCNR on each round.',
       'Track members and payout order transparently.',
       'Confirm actions with your secure card signing flow.',
     ],

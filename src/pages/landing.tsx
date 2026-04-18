@@ -9,7 +9,7 @@ const LOGO_URL = 'https://media.base44.com/images/public/69d29468e773ef42abd4ce4
 
 const STATS = [
   { value: '100%', label: 'Transparent rounds' },
-  { value: 'iUSDT', label: 'Contribution asset' },
+  { value: 'tCNR', label: 'Contribution asset' },
   { value: 'Card Sign', label: 'Hardware-backed actions' },
 ];
 

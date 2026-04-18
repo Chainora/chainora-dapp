@@ -2,38 +2,45 @@ import { injected } from 'wagmi/connectors';
 import { createConfig, http } from 'wagmi';
 import { defineChain } from 'viem';
 
-const initiaEvmTestnet = defineChain({
-  id: 7234,
-  name: 'Initia EVM Testnet',
+const chainoraChainId = Number(import.meta.env.VITE_CHAINORA_CHAIN_ID ?? 1123337227327254);
+const chainoraRpcUrl = import.meta.env.VITE_CHAINORA_RPC_URL ?? 'http://157.66.100.120:8545/';
+
+const chainoraRollup = defineChain({
+  id: Number.isFinite(chainoraChainId) && chainoraChainId > 0 ? chainoraChainId : 1123337227327254,
+  name: 'Chainora Rollup',
   nativeCurrency: {
-    name: 'INIT',
-    symbol: 'INIT',
+    name: 'Chainora Token',
+    symbol: import.meta.env.VITE_CHAINORA_CURRENCY_SYMBOL ?? 'tCNR',
     decimals: 18,
   },
   rpcUrls: {
     default: {
-      http: [import.meta.env.VITE_INITIA_RPC_URL ?? 'https://rpc.testnet.initia.xyz'],
+      http: [chainoraRpcUrl],
     },
   },
   blockExplorers: {
     default: {
-      name: 'Initia Explorer',
-      url: import.meta.env.VITE_INITIA_EXPLORER_URL ?? 'https://scan.testnet.initia.xyz',
+      name: 'Chainora Explorer',
+      url: import.meta.env.VITE_CHAINORA_EXPLORER_URL ?? 'http://157.66.100.120:8545/',
     },
   },
-  testnet: true,
+  testnet: false,
 });
 
 export const wagmiConfig = createConfig({
-  chains: [initiaEvmTestnet],
+  chains: [chainoraRollup],
   connectors: [
     injected({
       shimDisconnect: true,
     }),
   ],
   transports: {
-    [initiaEvmTestnet.id]: http(import.meta.env.VITE_INITIA_RPC_URL ?? 'https://rpc.testnet.initia.xyz'),
+    [chainoraRollup.id]: http(chainoraRpcUrl, {
+      timeout: 8_000,
+      retryCount: 1,
+      retryDelay: 300,
+    }),
   },
 });
 
-export { initiaEvmTestnet };
+export { chainoraRollup };

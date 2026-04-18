@@ -1,5 +1,5 @@
 import { bech32 } from '@scure/base';
-import { hexToBytes, isAddress } from 'viem';
+import { bytesToHex, getAddress, hexToBytes, isAddress } from 'viem';
 
 type UserDetailProps = {
   username?: string;
@@ -18,7 +18,7 @@ const shortenAddress = (address: string): string => {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 };
 
-const toInitAddress = (address: string): string => {
+export const toInitAddress = (address: string): string => {
   if (!isAddress(address)) {
     return '';
   }
@@ -26,6 +26,35 @@ const toInitAddress = (address: string): string => {
   try {
     const bytes = hexToBytes(address);
     return bech32.encode('init', bech32.toWords(bytes));
+  } catch {
+    return '';
+  }
+};
+
+export const fromInitAddress = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  try {
+    const normalized = trimmed.toLowerCase();
+    if (!normalized.startsWith('init1')) {
+      return '';
+    }
+    const decoded = bech32.decode(normalized as `${string}1${string}`);
+    if (decoded.prefix !== 'init') {
+      return '';
+    }
+    const bytes = Uint8Array.from(bech32.fromWords(decoded.words));
+    if (bytes.length !== 20) {
+      return '';
+    }
+    const hexAddress = bytesToHex(bytes);
+    if (!isAddress(hexAddress)) {
+      return '';
+    }
+    return getAddress(hexAddress);
   } catch {
     return '';
   }
@@ -46,6 +75,7 @@ const shortenInitAddress = (address: string): string => {
 export function UserDetail({ username, address }: UserDetailProps) {
   const safeUsername = username?.trim() ?? '';
   const initAddress = toInitAddress(address ?? '');
+  const initTooltip = initAddress ? initAddress.toUpperCase() : '';
   const label = safeUsername
     ? `${safeUsername}.init`
     : initAddress
@@ -53,7 +83,10 @@ export function UserDetail({ username, address }: UserDetailProps) {
       : shortenAddress(address ?? '');
 
   return (
-    <div className="inline-flex items-center rounded-full border border-black bg-white px-3 py-1">
+    <div
+      className="inline-flex items-center rounded-full border border-black bg-white px-3 py-1"
+      title={initTooltip || undefined}
+    >
       <span className="text-xs font-extrabold uppercase tracking-[0.14em] text-black">{label || 'Unknown User'}</span>
     </div>
   );

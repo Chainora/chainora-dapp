@@ -11,7 +11,7 @@ type InitiaWalletContextValue = {
 };
 
 const defaultChainId = Number(import.meta.env.VITE_CHAINORA_CHAIN_ID ?? '1123337227327254');
-const defaultRPC = import.meta.env.VITE_CHAINORA_RPC_URL ?? 'http://23.94.63.207:8545';
+const defaultRPC = import.meta.env.VITE_CHAINORA_RPC_URL ?? 'http://157.66.100.120:8545/';
 const defaultExplorer = import.meta.env.VITE_CHAINORA_EXPLORER_URL ?? 'https://scan.testnet.initia.xyz';
 
 const InitiaWalletContext = createContext<InitiaWalletContextValue | undefined>(undefined);

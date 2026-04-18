@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useState } from 'react';
 import { Navigate } from '@tanstack/react-router';
 
 import { chainoraApiBase } from '../configs/api';
 import { useAuthFetch } from '../hooks/useAuthFetch';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
-import { fetchChainoraBalance } from '../services/chainoraBalance';
+import { fetchChainoraBalance, fetchChainoraStablecoinBalance } from '../services/chainoraBalance';
 import { buildQrImageUrl, buildQrPayload } from '../services/qrFlow';
+import { uploadMediaImage } from '../services/mediaService';
+import { updateAuthProfileAvatar } from '../services/profileService';
 import { createUsernameRelayerPayload, openUsernameRelayerSocket } from '../services/usernameRelayer';
+import { toInitAddress } from '../components/UserDetail';
 
 type ProfileResponse = {
   address: string;
   username: string;
+  avatarUrl: string;
   tCNR: string;
   kycStatus: string;
 };
@@ -45,15 +49,20 @@ const sanitizeRelayerErrorMessage = (raw: string): string => {
 };
 
 export function ProfilePage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, setAvatarUrl } = useAuth();
   const { authFetch } = useAuthFetch();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [registerUsername, setRegisterUsername] = useState('');
   const [showRegisterForm, setShowRegisterForm] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshingProfile, setRefreshingProfile] = useState(false);
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [chainoraBalance, setChainoraBalance] = useState('0.0000');
+  const [stablecoinBalance, setStablecoinBalance] = useState('0.0000');
+  const [stablecoinSymbol, setStablecoinSymbol] = useState(import.meta.env.VITE_CHAINORA_CONTRIBUTION_SYMBOL?.trim() || 'tcUSD');
+  const [stablecoinAddress, setStablecoinAddress] = useState('');
+  const [stablecoinError, setStablecoinError] = useState('');
   const [registering, setRegistering] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -64,10 +73,6 @@ export function ProfilePage() {
   const hasUsername = Boolean(normalizeProfileUsername(profile?.username));
   const tcnrSymbol = (import.meta.env.VITE_CHAINORA_CURRENCY_SYMBOL?.trim() || 'tCNR').toUpperCase();
   const isAwaitingCardScan = relayerWsState === 'awaiting_card_scan';
-
-  if (!isAuthenticated) {
-    return <Navigate to="/" />;
-  }
 
   const refreshProfile = useCallback(
     async (showGlobalLoading: boolean, clearMessages: boolean) => {
@@ -97,6 +102,7 @@ export function ProfilePage() {
             : (raw as ProfileResponse);
 
         setProfile(data);
+        setAvatarUrl(data.avatarUrl?.trim() || '');
         if (normalizeProfileUsername(data.username)) {
           setRegisterUsername('');
           setShowRegisterForm(false);
@@ -112,8 +118,42 @@ export function ProfilePage() {
         }
       }
     },
-    [authFetch],
+    [authFetch, setAvatarUrl],
   );
+
+  const handleAvatarChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Please select an image file for avatar.');
+      return;
+    }
+
+    setUploadingAvatar(true);
+    setError('');
+    setNotice('Uploading avatar...');
+
+    try {
+      const upload = await uploadMediaImage(authFetch, file, 'avatar');
+      const updatedProfile = await updateAuthProfileAvatar(authFetch, upload.url);
+      setProfile(prev => ({
+        ...(prev ?? updatedProfile),
+        ...updatedProfile,
+        avatarUrl: updatedProfile.avatarUrl || upload.url,
+      }));
+      setAvatarUrl(updatedProfile.avatarUrl || upload.url);
+      setNotice('Avatar updated successfully.');
+    } catch (err) {
+      setNotice('');
+      setError(err instanceof Error ? err.message : 'Failed to upload avatar');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -174,13 +214,37 @@ export function ProfilePage() {
     const loadBalance = async () => {
       setLoadingBalance(true);
       try {
-        const balance = await fetchChainoraBalance(profile.address);
-        if (!cancelled) {
-          setChainoraBalance(balance.formatted);
+        const [nativeBalanceResult, stablecoinBalanceResult] = await Promise.allSettled([
+          fetchChainoraBalance(profile.address),
+          fetchChainoraStablecoinBalance(profile.address),
+        ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (nativeBalanceResult.status === 'fulfilled') {
+          setChainoraBalance(nativeBalanceResult.value.formatted);
+        } else {
+          setChainoraBalance('0.0000');
+        }
+
+        if (stablecoinBalanceResult.status === 'fulfilled') {
+          setStablecoinBalance(stablecoinBalanceResult.value.formatted);
+          setStablecoinSymbol(stablecoinBalanceResult.value.symbol || (import.meta.env.VITE_CHAINORA_CONTRIBUTION_SYMBOL?.trim() || 'tcUSD'));
+          setStablecoinAddress(stablecoinBalanceResult.value.tokenAddress);
+          setStablecoinError('');
+        } else {
+          setStablecoinBalance('0.0000');
+          setStablecoinAddress('');
+          const reason = stablecoinBalanceResult.reason;
+          setStablecoinError(reason instanceof Error ? reason.message : 'Unable to load stablecoin balance.');
         }
       } catch {
         if (!cancelled) {
           setChainoraBalance('0.0000');
+          setStablecoinBalance('0.0000');
+          setStablecoinError('Unable to load stablecoin balance.');
         }
       } finally {
         if (!cancelled) {
@@ -194,7 +258,7 @@ export function ProfilePage() {
     return () => {
       cancelled = true;
     };
-  }, [profile?.address, profile?.username]);
+  }, [profile?.address]);
 
   useEffect(() => {
     if (normalizeProfileUsername(profile?.username)) {
@@ -255,6 +319,10 @@ export function ProfilePage() {
     setRegistering(false);
   };
 
+  if (!isAuthenticated) {
+    return <Navigate to="/" />;
+  }
+
   return (
     <section className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
       <h1 className="text-2xl font-semibold text-slate-900">Profile</h1>
@@ -268,8 +336,37 @@ export function ProfilePage() {
       {profile ? (
         <div className="mt-6 space-y-5">
           <div className="rounded-xl bg-slate-50 p-4">
+            <p className="text-xs uppercase tracking-wider text-slate-500">Avatar</p>
+            <div className="mt-3 flex items-center gap-4">
+              {profile.avatarUrl ? (
+                <img src={profile.avatarUrl} alt="Profile avatar" className="h-20 w-20 rounded-full object-cover ring-2 ring-slate-200" />
+              ) : (
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                  No avatar
+                </div>
+              )}
+              <div className="space-y-2">
+                <label className="inline-flex cursor-pointer items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700">
+                  {uploadingAvatar ? 'Uploading...' : 'Upload avatar'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingAvatar}
+                    onChange={event => {
+                      void handleAvatarChange(event);
+                    }}
+                  />
+                </label>
+                <p className="text-xs text-slate-500">Image will be auto-resized and compressed before upload.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl bg-slate-50 p-4">
             <p className="text-xs uppercase tracking-wider text-slate-500">Wallet</p>
-            <p className="mt-1 text-sm font-medium text-slate-900 break-all">{profile.address}</p>
+            <p className="mt-1 text-sm font-medium text-slate-900 break-all">{toInitAddress(profile.address).toUpperCase() || profile.address}</p>
+            <p className="mt-1 text-xs text-slate-500 break-all">EVM: {profile.address}</p>
           </div>
 
           <div>
@@ -323,12 +420,23 @@ export function ProfilePage() {
 
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="rounded-xl bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-wider text-slate-500">tCNR</p>
               <p className="mt-1 text-xl font-semibold text-slate-900">
                 {loadingBalance ? 'Loading...' : `${chainoraBalance} ${tcnrSymbol}`}
               </p>
+            </div>
+            <div className="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
+              <p className="text-xs uppercase tracking-wider text-emerald-700">{stablecoinSymbol}</p>
+              <p className="mt-1 text-xl font-semibold text-emerald-800">
+                {loadingBalance ? 'Loading...' : stablecoinError ? 'Unavailable' : `${stablecoinBalance} ${stablecoinSymbol}`}
+              </p>
+              {stablecoinError ? (
+                <p className="mt-1 text-xs text-emerald-700">{stablecoinError}</p>
+              ) : stablecoinAddress ? (
+                <p className="mt-1 text-xs text-emerald-700 break-all">Token: {stablecoinAddress}</p>
+              ) : null}
             </div>
             <div className="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
               <p className="text-xs uppercase tracking-wider text-amber-700">KYC</p>

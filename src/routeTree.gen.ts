@@ -11,7 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as CreateGroupRouteImport } from './routes/create-group'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as GroupsPoolIdRouteImport } from './routes/groups.$poolId'
+import { Route as GroupPoolIdRouteImport } from './routes/group.$poolId'
 
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
@@ -23,40 +26,86 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CreateGroupRoute = CreateGroupRouteImport.update({
+  id: '/create-group',
+  path: '/create-group',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GroupsPoolIdRoute = GroupsPoolIdRouteImport.update({
+  id: '/groups/$poolId',
+  path: '/groups/$poolId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupPoolIdRoute = GroupPoolIdRouteImport.update({
+  id: '/group/$poolId',
+  path: '/group/$poolId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/create-group': typeof CreateGroupRoute
   '/dashboard': typeof DashboardRoute
   '/profile': typeof ProfileRoute
+  '/group/$poolId': typeof GroupPoolIdRoute
+  '/groups/$poolId': typeof GroupsPoolIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/create-group': typeof CreateGroupRoute
   '/dashboard': typeof DashboardRoute
   '/profile': typeof ProfileRoute
+  '/group/$poolId': typeof GroupPoolIdRoute
+  '/groups/$poolId': typeof GroupsPoolIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/create-group': typeof CreateGroupRoute
   '/dashboard': typeof DashboardRoute
   '/profile': typeof ProfileRoute
+  '/group/$poolId': typeof GroupPoolIdRoute
+  '/groups/$poolId': typeof GroupsPoolIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/profile'
+  fullPaths:
+    | '/'
+    | '/create-group'
+    | '/dashboard'
+    | '/profile'
+    | '/group/$poolId'
+    | '/groups/$poolId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/profile'
-  id: '__root__' | '/' | '/dashboard' | '/profile'
+  to:
+    | '/'
+    | '/create-group'
+    | '/dashboard'
+    | '/profile'
+    | '/group/$poolId'
+    | '/groups/$poolId'
+  id:
+    | '__root__'
+    | '/'
+    | '/create-group'
+    | '/dashboard'
+    | '/profile'
+    | '/group/$poolId'
+    | '/groups/$poolId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CreateGroupRoute: typeof CreateGroupRoute
   DashboardRoute: typeof DashboardRoute
   ProfileRoute: typeof ProfileRoute
+  GroupPoolIdRoute: typeof GroupPoolIdRoute
+  GroupsPoolIdRoute: typeof GroupsPoolIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -75,6 +124,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/create-group': {
+      id: '/create-group'
+      path: '/create-group'
+      fullPath: '/create-group'
+      preLoaderRoute: typeof CreateGroupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -82,13 +138,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/groups/$poolId': {
+      id: '/groups/$poolId'
+      path: '/groups/$poolId'
+      fullPath: '/groups/$poolId'
+      preLoaderRoute: typeof GroupsPoolIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/group/$poolId': {
+      id: '/group/$poolId'
+      path: '/group/$poolId'
+      fullPath: '/group/$poolId'
+      preLoaderRoute: typeof GroupPoolIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CreateGroupRoute: CreateGroupRoute,
   DashboardRoute: DashboardRoute,
   ProfileRoute: ProfileRoute,
+  GroupPoolIdRoute: GroupPoolIdRoute,
+  GroupsPoolIdRoute: GroupsPoolIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

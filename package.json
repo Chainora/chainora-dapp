@@ -17,7 +17,8 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "viem": "^2.21.50",
-    "wagmi": "^2.12.20"
+    "wagmi": "^2.12.20",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tanstack/router-cli": "^1.87.0",

@@ -31,6 +31,16 @@ export const REGISTRY_ABI = [
 
 export const FACTORY_ABI = [
   {
+    type: 'event',
+    name: 'ChainoraPoolCreated',
+    inputs: [
+      { indexed: true, name: 'poolId', type: 'uint256' },
+      { indexed: true, name: 'pool', type: 'address' },
+      { indexed: true, name: 'creator', type: 'address' },
+    ],
+    anonymous: false,
+  },
+  {
     type: 'function',
     name: 'poolCount',
     stateMutability: 'view',
@@ -54,6 +64,7 @@ export const FACTORY_ABI = [
         type: 'tuple',
         components: [
           { name: 'contributionAmount', type: 'uint256' },
+          { name: 'minReputation', type: 'uint256' },
           { name: 'targetMembers', type: 'uint16' },
           { name: 'periodDuration', type: 'uint32' },
           { name: 'contributionWindow', type: 'uint32' },
@@ -66,9 +77,146 @@ export const FACTORY_ABI = [
       { name: 'poolId', type: 'uint256' },
     ],
   },
+  {
+    type: 'function',
+    name: 'createPool',
+    stateMutability: 'nonpayable',
+    inputs: [
+      {
+        name: 'config',
+        type: 'tuple',
+        components: [
+          { name: 'contributionAmount', type: 'uint256' },
+          { name: 'minReputation', type: 'uint256' },
+          { name: 'targetMembers', type: 'uint16' },
+          { name: 'periodDuration', type: 'uint32' },
+          { name: 'contributionWindow', type: 'uint32' },
+          { name: 'auctionWindow', type: 'uint32' },
+        ],
+      },
+      { name: 'publicRecruitment', type: 'bool' },
+    ],
+    outputs: [
+      { name: 'pool', type: 'address' },
+      { name: 'poolId', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'recruitingPoolCount',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'recruitingPool',
+    stateMutability: 'view',
+    inputs: [{ name: 'poolId', type: 'uint256' }],
+    outputs: [
+      {
+        type: 'tuple',
+        components: [
+          { name: 'poolId', type: 'uint256' },
+          { name: 'pool', type: 'address' },
+          { name: 'creator', type: 'address' },
+          { name: 'publicRecruitment', type: 'bool' },
+          { name: 'listed', type: 'bool' },
+          { name: 'poolStatus', type: 'uint8' },
+          { name: 'activeMemberCount', type: 'uint256' },
+          { name: 'targetMembers', type: 'uint16' },
+          { name: 'contributionAmount', type: 'uint256' },
+          { name: 'minReputation', type: 'uint256' },
+        ],
+      },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'recruitingPools',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'offset', type: 'uint256' },
+      { name: 'limit', type: 'uint256' },
+    ],
+    outputs: [
+      {
+        type: 'tuple[]',
+        components: [
+          { name: 'poolId', type: 'uint256' },
+          { name: 'pool', type: 'address' },
+          { name: 'creator', type: 'address' },
+          { name: 'publicRecruitment', type: 'bool' },
+          { name: 'listed', type: 'bool' },
+          { name: 'poolStatus', type: 'uint8' },
+          { name: 'activeMemberCount', type: 'uint256' },
+          { name: 'targetMembers', type: 'uint16' },
+          { name: 'contributionAmount', type: 'uint256' },
+          { name: 'minReputation', type: 'uint256' },
+        ],
+      },
+    ],
+  },
 ] as const;
 
 export const POOL_ABI = [
+  {
+    type: 'event',
+    name: 'ChainoraInviteProposed',
+    inputs: [
+      { indexed: true, name: 'proposalId', type: 'uint256' },
+      { indexed: true, name: 'candidate', type: 'address' },
+      { indexed: true, name: 'proposer', type: 'address' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ChainoraInviteVoted',
+    inputs: [
+      { indexed: true, name: 'proposalId', type: 'uint256' },
+      { indexed: true, name: 'voter', type: 'address' },
+      { indexed: false, name: 'support', type: 'bool' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ChainoraInviteAccepted',
+    inputs: [
+      { indexed: true, name: 'proposalId', type: 'uint256' },
+      { indexed: true, name: 'member', type: 'address' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ChainoraJoinRequestSubmitted',
+    inputs: [
+      { indexed: true, name: 'requestId', type: 'uint256' },
+      { indexed: true, name: 'applicant', type: 'address' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ChainoraJoinRequestVoted',
+    inputs: [
+      { indexed: true, name: 'requestId', type: 'uint256' },
+      { indexed: true, name: 'voter', type: 'address' },
+      { indexed: false, name: 'support', type: 'bool' },
+    ],
+    anonymous: false,
+  },
+  {
+    type: 'event',
+    name: 'ChainoraJoinRequestAccepted',
+    inputs: [
+      { indexed: true, name: 'requestId', type: 'uint256' },
+      { indexed: true, name: 'member', type: 'address' },
+    ],
+    anonymous: false,
+  },
   {
     type: 'function',
     name: 'poolStatus',
@@ -95,7 +243,7 @@ export const POOL_ABI = [
     name: 'activeMemberCount',
     stateMutability: 'view',
     inputs: [],
-    outputs: [{ name: '', type: 'uint16' }],
+    outputs: [{ name: '', type: 'uint256' }],
   },
   {
     type: 'function',
@@ -106,7 +254,81 @@ export const POOL_ABI = [
   },
   {
     type: 'function',
+    name: 'extendVoteState',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [
+      { name: 'open', type: 'bool' },
+      { name: 'round', type: 'uint256' },
+      { name: 'yesVotes', type: 'uint256' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'creator',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    type: 'function',
+    name: 'publicRecruitment',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+  {
+    type: 'function',
+    name: 'targetMembers',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint16' }],
+  },
+  {
+    type: 'function',
+    name: 'minReputation',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'periodDuration',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint32' }],
+  },
+  {
+    type: 'function',
+    name: 'contributionWindow',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint32' }],
+  },
+  {
+    type: 'function',
+    name: 'auctionWindow',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint32' }],
+  },
+  {
+    type: 'function',
     name: 'members',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address[]' }],
+  },
+  {
+    type: 'function',
+    name: 'activeMembers',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'address[]' }],
+  },
+  {
+    type: 'function',
+    name: 'allMembers',
     stateMutability: 'view',
     inputs: [],
     outputs: [{ name: '', type: 'address[]' }],
@@ -163,6 +385,30 @@ export const POOL_ABI = [
   },
   {
     type: 'function',
+    name: 'inviteProposal',
+    stateMutability: 'view',
+    inputs: [{ name: 'proposalId', type: 'uint256' }],
+    outputs: [
+      { name: 'candidate', type: 'address' },
+      { name: 'yesVotes', type: 'uint256' },
+      { name: 'noVotes', type: 'uint256' },
+      { name: 'open', type: 'bool' },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'joinRequest',
+    stateMutability: 'view',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
+    outputs: [
+      { name: 'applicant', type: 'address' },
+      { name: 'yesVotes', type: 'uint256' },
+      { name: 'noVotes', type: 'uint256' },
+      { name: 'open', type: 'bool' },
+    ],
+  },
+  {
+    type: 'function',
     name: 'proposeInvite',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'candidate', type: 'address' }],
@@ -180,9 +426,40 @@ export const POOL_ABI = [
   },
   {
     type: 'function',
-    name: 'acceptInviteAndLockDeposit',
+    name: 'acceptInvite',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'proposalId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'submitJoinRequest',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [{ name: 'requestId', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'voteJoinRequest',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'requestId', type: 'uint256' },
+      { name: 'support', type: 'bool' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'acceptJoinRequest',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'cancelJoinRequest',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'requestId', type: 'uint256' }],
     outputs: [],
   },
   {
@@ -229,16 +506,9 @@ export const POOL_ABI = [
   },
   {
     type: 'function',
-    name: 'markDefaultAndPause',
+    name: 'markDefaultAndArchive',
     stateMutability: 'nonpayable',
     inputs: [{ name: 'defaultedMember', type: 'address' }],
-    outputs: [],
-  },
-  {
-    type: 'function',
-    name: 'voteContinueAfterPause',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'support', type: 'bool' }],
     outputs: [],
   },
   {
@@ -251,6 +521,13 @@ export const POOL_ABI = [
   {
     type: 'function',
     name: 'archive',
+    stateMutability: 'nonpayable',
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'leaveDuringForming',
     stateMutability: 'nonpayable',
     inputs: [],
     outputs: [],

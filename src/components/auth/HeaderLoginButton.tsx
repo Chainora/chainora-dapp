@@ -14,14 +14,33 @@ import { buildQrImageUrl } from '../../services/qrFlow';
 import { Button } from '../ui/Button';
 
 export function HeaderLoginButton() {
-  const { address, username, isAuthenticated, logout, setAuthenticated, syncProfile } = useAuth();
+  const { address, username, avatarUrl, isAuthenticated, logout, setAuthenticated, syncProfile } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [session, setSession] = useState<AuthSessionResponse | null>(null);
   const [wsStatus, setWsStatus] = useState('idle');
   const wsRef = useRef<WebSocket | null>(null);
-  const isAwaitingCardScan = wsStatus === 'awaiting_card_scan';
+  const avatarMenuRef = useRef<HTMLDivElement | null>(null);
+  const isLoginFlowInProgress = wsStatus === 'awaiting_card_scan'
+    || wsStatus.startsWith('login_device_');
+
+  const avatarLabel = useMemo(() => {
+    const trimmedUsername = username?.trim() ?? '';
+    if (trimmedUsername) {
+      return trimmedUsername.slice(0, 2).toUpperCase();
+    }
+
+    const trimmedAddress = address?.trim() ?? '';
+    if (!trimmedAddress) {
+      return 'AV';
+    }
+
+    return trimmedAddress.slice(2, 4).toUpperCase();
+  }, [address, username]);
+
+  const resolvedAvatarUrl = useMemo(() => avatarUrl.trim(), [avatarUrl]);
 
   const qrPayload = useMemo(() => {
     if (!session) {
@@ -35,6 +54,31 @@ export function HeaderLoginButton() {
   const statusMessage = useMemo(() => {
     if (wsStatus === 'awaiting_card_scan') {
       return 'pls scan chainora card in your wallet to confirm';
+    }
+
+    if (wsStatus === 'login_device_verify_preparing') {
+      return 'login verified, preparing one-time on-chain device verification...';
+    }
+    if (wsStatus === 'login_device_verify_challenge') {
+      return 'creating device challenge on card...';
+    }
+    if (wsStatus === 'login_device_verify_backend') {
+      return 'submitting card proof to backend...';
+    }
+    if (wsStatus === 'login_device_attestation_request') {
+      return 'requesting on-chain attestation payload...';
+    }
+    if (wsStatus === 'login_device_verification_submit') {
+      return 'submitting device verification transaction...';
+    }
+    if (wsStatus === 'login_device_verification_receipt') {
+      return 'waiting for device verification confirmation...';
+    }
+    if (wsStatus === 'login_device_verify_success') {
+      return 'device verification completed. future create/invite flows will be faster.';
+    }
+    if (wsStatus === 'login_device_verify_failed') {
+      return 'login succeeded, but on-chain device warmup failed. you can still retry later.';
     }
 
     if (wsStatus === 'verified') {
@@ -55,7 +99,7 @@ export function HeaderLoginButton() {
   };
 
   const startQrLogin = async () => {
-    if (isAwaitingCardScan) {
+    if (isLoginFlowInProgress) {
       return;
     }
 
@@ -130,48 +174,81 @@ export function HeaderLoginButton() {
     }
   }, [isAuthenticated, isDialogOpen]);
 
+  useEffect(() => {
+    if (!isAvatarMenuOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!avatarMenuRef.current) {
+        return;
+      }
+
+      if (!avatarMenuRef.current.contains(event.target as Node)) {
+        setIsAvatarMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsAvatarMenuOpen(false);
+      }
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isAvatarMenuOpen]);
+
   if (isAuthenticated) {
     return (
       <div className="flex items-center gap-3">
-        <div className="group relative">
-          <div className="cursor-pointer">
-            <UserDetail username={username} address={address} />
-          </div>
+        <div className="relative" ref={avatarMenuRef}>
+          <button
+            type="button"
+            className={`inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-200 text-xs font-semibold text-slate-600 transition hover:border-sky-300 ${resolvedAvatarUrl ? 'bg-white' : 'bg-gradient-to-br from-slate-100 to-slate-200'}`}
+            aria-label="User menu"
+            aria-haspopup="menu"
+            aria-expanded={isAvatarMenuOpen}
+            onClick={() => setIsAvatarMenuOpen(prev => !prev)}
+          >
+            {resolvedAvatarUrl ? (
+              <img src={resolvedAvatarUrl} alt="User avatar" className="h-full w-full object-cover" />
+            ) : (
+              avatarLabel
+            )}
+          </button>
 
-          <div className="invisible absolute right-0 top-full z-40 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 opacity-0 shadow-lg transition duration-150 group-hover:visible group-hover:opacity-100">
-            <Link
-              to="/profile"
-              className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
-            >
-              Edit profile
-            </Link>
-            <button
-              type="button"
-              className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
-              onClick={logout}
-            >
-              Logout
-            </button>
-          </div>
+          {isAvatarMenuOpen ? (
+            <div className="absolute right-0 top-full z-40 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+              <Link
+                to="/profile"
+                className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                onClick={() => setIsAvatarMenuOpen(false)}
+              >
+                Profile
+              </Link>
+              <button
+                type="button"
+                className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                onClick={() => {
+                  setIsAvatarMenuOpen(false);
+                  logout();
+                }}
+              >
+                Logout
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        <button
-          type="button"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-600"
-          aria-label="Notifications"
-        >
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-            <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
-            <path d="M9 17a3 3 0 0 0 6 0" />
-          </svg>
-        </button>
-
-        <div
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-200 text-xs font-semibold text-slate-500"
-          aria-label="User avatar"
-        >
-          AV
-        </div>
+        <Link to="/profile" className="inline-flex">
+          <UserDetail username={username} address={address} />
+        </Link>
       </div>
     );
   }
@@ -185,7 +262,7 @@ export function HeaderLoginButton() {
         }}
         className="bg-gradient-to-r from-sky-600 to-cyan-500 text-white hover:from-sky-500 hover:to-cyan-400"
       >
-        Login with ICRosca Card
+        Login with Chainora Card
       </Button>
 
       {isDialogOpen ? (
@@ -193,7 +270,7 @@ export function HeaderLoginButton() {
           <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-500">ICRosca Card Login</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-sky-500">Chainora Card Login</p>
                 <h2 className="mt-2 text-xl font-bold text-slate-900">Scan and sign with your card</h2>
               </div>
               <button
@@ -214,9 +291,9 @@ export function HeaderLoginButton() {
             </div>
 
             <div className="mt-5 grid min-h-[280px] place-items-center">
-              {wsStatus === 'awaiting_card_scan' ? (
+              {isLoginFlowInProgress ? (
                 <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-4 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
-                  pls scan card to login dapp
+                  qr locked after first scan
                 </div>
               ) : qrImageUrl ? (
                 <img src={qrImageUrl} alt="Login QR" className="h-[260px] w-[260px] rounded-xl object-contain ring-1 ring-slate-200" />
@@ -239,7 +316,7 @@ export function HeaderLoginButton() {
                 onClick={() => {
                   void startQrLogin();
                 }}
-                disabled={loading || isAwaitingCardScan}
+                disabled={loading || isLoginFlowInProgress}
               >
                 {loading ? 'Refreshing...' : 'Refresh QR'}
               </Button>

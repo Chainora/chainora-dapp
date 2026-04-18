@@ -1,90 +1,155 @@
-import { Navigate } from '@tanstack/react-router';
+import { Navigate, useNavigate } from '@tanstack/react-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePublicClient } from 'wagmi';
 
-import { UserDetail } from '../components/UserDetail';
+import {
+  readDashboardGroupCache,
+  readJoinedPoolIdCache,
+  writeDashboardGroupCache,
+  writeJoinedPoolIdCache,
+} from '../features/dashboard/cache';
+import {
+  CONTRIBUTION_SYMBOL,
+  JOINED_FILTER_TIMEOUT_MS,
+  JOINED_REFRESH_INTERVAL_MS,
+  REFRESH_INTERVAL_MS,
+} from '../features/dashboard/constants';
+import { filterJoinedGroupsWithTimeout } from '../features/dashboard/groupMembership';
+import type { DashboardMode } from '../features/dashboard/types';
+import { DashboardGroupCard, DashboardStats } from '../features/dashboard/ui';
+import { areGroupsEqual, formatAmount, normalizeViewerAddress } from '../features/dashboard/utils';
 import { useAuth } from '../context/AuthContext';
-type GroupCard = {
-  title: string;
-  description: string;
-  amount: string;
-  members: string;
-  cadence: string;
-  round: string;
-  progress: number;
-  pool: string;
-  tag: 'Recruiting' | 'Active';
-};
-
-const GROUPS: GroupCard[] = [
-  {
-    title: 'iUSDT Savings Circle - April',
-    description: 'A beginner-friendly ROSCA group for monthly savings.',
-    amount: '50 iUSDT',
-    members: '8 members',
-    cadence: 'Every 7 days',
-    round: 'Round 1/8',
-    progress: 13,
-    pool: '0 iUSDT',
-    tag: 'Recruiting',
-  },
-  {
-    title: 'Community Fund - Q2',
-    description: 'Trusted neighborhood savings with transparent payouts.',
-    amount: '200 iUSDT',
-    members: '10 members',
-    cadence: 'Every 14 days',
-    round: 'Round 1/10',
-    progress: 10,
-    pool: '0 iUSDT',
-    tag: 'Recruiting',
-  },
-  {
-    title: 'Elite Ring - Monthly',
-    description: 'High-trust monthly ROSCA with predictable contribution cycles.',
-    amount: '500 iUSDT',
-    members: '12 members',
-    cadence: 'Every 30 days',
-    round: 'Round 1/12',
-    progress: 8,
-    pool: '0 iUSDT',
-    tag: 'Recruiting',
-  },
-  {
-    title: 'Gold Circle - Monthly',
-    description: 'Premium group for verified members only.',
-    amount: '1,000 iUSDT',
-    members: '6 members',
-    cadence: 'Every 30 days',
-    round: 'Round 2/6',
-    progress: 33,
-    pool: '4,000 iUSDT',
-    tag: 'Active',
-  },
-  {
-    title: 'Hui Group 04 - Recruiting',
-    description: 'Small five-member ROSCA group currently onboarding members.',
-    amount: '100 iUSDT',
-    members: '5 members',
-    cadence: 'Every 30 days',
-    round: 'Round 1/5',
-    progress: 20,
-    pool: '0 iUSDT',
-    tag: 'Recruiting',
-  },
-  {
-    title: 'Friends Circle - Quarter 2',
-    description: 'Six members, one completed cycle, currently in cycle two.',
-    amount: '200 iUSDT',
-    members: '6 members',
-    cadence: 'Every 30 days',
-    round: 'Round 2/6',
-    progress: 33,
-    pool: '1,200 iUSDT',
-    tag: 'Active',
-  },
-];
+import { fetchGroups, type ApiGroup, type GroupVisibility } from '../services/groupsService';
 
 export function DashboardPage() {
-  const { username, address, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
+  const publicClient = usePublicClient();
+  const { isAuthenticated, token, refreshSession, address } = useAuth();
+
+  const [groups, setGroups] = useState<ApiGroup[]>([]);
+  const [mode, setMode] = useState<DashboardMode>('public');
+  const [query, setQuery] = useState('');
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const [error, setError] = useState('');
+  const loadInFlightRef = useRef(false);
+  const viewerAddress = useMemo(() => normalizeViewerAddress(address), [address]);
+
+  const loadGroups = useCallback(async (sync = false) => {
+    if (!token || loadInFlightRef.current) {
+      return;
+    }
+
+    loadInFlightRef.current = true;
+    setError('');
+
+    try {
+      let accessToken = token;
+      let result: ApiGroup[];
+      const scope = 'all';
+      const visibility: GroupVisibility = mode === 'public' ? 'public' : 'all';
+      const shouldSync = mode === 'public' || sync;
+
+      try {
+        result = await fetchGroups(accessToken, scope, query, { sync: shouldSync, visibility });
+      } catch {
+        accessToken = await refreshSession();
+        result = await fetchGroups(accessToken, scope, query, { sync: shouldSync, visibility });
+      }
+
+      if (mode === 'public') {
+        result = result.filter(group => group.publicRecruitment === true);
+      }
+
+      if (mode === 'joined') {
+        const cachedPoolIds = readJoinedPoolIdCache(viewerAddress || address);
+        if (cachedPoolIds.length > 0) {
+          const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
+          const quickResult = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
+          if (quickResult.length > 0) {
+            setGroups(previous => (areGroupsEqual(previous, quickResult) ? previous : quickResult));
+          }
+        }
+
+        const joinedFilter = viewerAddress
+          ? await filterJoinedGroupsWithTimeout(
+            publicClient,
+            result,
+            viewerAddress,
+            JOINED_FILTER_TIMEOUT_MS,
+          )
+          : { timedOut: true, groups: [] as ApiGroup[] };
+
+        if (!joinedFilter.timedOut) {
+          result = joinedFilter.groups;
+          writeJoinedPoolIdCache(viewerAddress || address, result.map(group => group.poolId));
+        } else if (cachedPoolIds.length > 0) {
+          const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
+          result = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
+        } else {
+          result = [];
+        }
+      }
+
+      setGroups(previous => (areGroupsEqual(previous, result) ? previous : result));
+      writeDashboardGroupCache(mode, query, result);
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Failed to load groups';
+      setError(message);
+    } finally {
+      setHasLoadedOnce(true);
+      loadInFlightRef.current = false;
+    }
+  }, [address, mode, publicClient, query, refreshSession, token, viewerAddress]);
+
+  useEffect(() => {
+    const cached = readDashboardGroupCache(mode, query);
+    if (cached && cached.length > 0) {
+      setGroups(previous => (areGroupsEqual(previous, cached) ? previous : cached));
+    }
+  }, [mode, query]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const poll = async () => {
+      if (cancelled) {
+        return;
+      }
+
+      await loadGroups(false);
+      if (cancelled) {
+        return;
+      }
+
+      timer = window.setTimeout(
+        () => {
+          void poll();
+        },
+        mode === 'joined' ? JOINED_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS,
+      );
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [loadGroups, mode]);
+
+  const activeCount = useMemo(() => groups.filter(group => group.status === 1).length, [groups]);
+  const formingCount = useMemo(() => groups.filter(group => group.status === 0).length, [groups]);
+  const totalContributed = useMemo(() => {
+    try {
+      const sum = groups.reduce((acc, item) => acc + BigInt(item.contributionAmount), 0n);
+      return formatAmount(sum.toString());
+    } catch {
+      return `0 ${CONTRIBUTION_SYMBOL}`;
+    }
+  }, [groups]);
 
   if (!isAuthenticated) {
     return <Navigate to="/" />;
@@ -92,32 +157,21 @@ export function DashboardPage() {
 
   return (
     <section className="mx-auto max-w-6xl space-y-7">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Account</p>
-        <div className="mt-2">
-          <UserDetail username={username} address={address} />
-        </div>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Active Groups</p>
-          <p className="mt-2 text-4xl font-bold text-slate-900">0</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Total Contributed</p>
-          <p className="mt-2 text-4xl font-bold text-slate-900">0 iUSDT</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Recruiting</p>
-          <p className="mt-2 text-4xl font-bold text-slate-900">4</p>
-        </article>
-      </div>
+      <DashboardStats
+        activeCount={activeCount}
+        formingCount={formingCount}
+        totalContributed={totalContributed}
+      />
 
       <div className="flex items-center justify-between">
-        <h1 className="text-4xl font-bold text-slate-900">Savings Groups</h1>
+        <h1 className="text-4xl font-bold text-slate-900">
+          {mode === 'public' ? 'Public Groups' : 'Groups You Joined'}
+        </h1>
         <button
           type="button"
+          onClick={() => {
+            void navigate({ to: '/create-group' });
+          }}
           className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
         >
           + Create Group
@@ -125,60 +179,61 @@ export function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">Search groups...</div>
+        <input
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+          placeholder="Search by name, pool id, or pool address"
+          className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+        />
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1">
-          <button type="button" className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-900">
-            All
+          <button
+            type="button"
+            onClick={() => setMode('public')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${mode === 'public' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Public
           </button>
-          <button type="button" className="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-500 hover:bg-slate-50">
-            Mine
-          </button>
-          <button type="button" className="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-500 hover:bg-slate-50">
-            Recruiting
+          <button
+            type="button"
+            onClick={() => setMode('joined')}
+            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${mode === 'joined' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'}`}
+          >
+            Joined
           </button>
         </div>
-        <button type="button" className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
-          Filter
+        <button
+          type="button"
+          onClick={() => {
+            void loadGroups(true);
+          }}
+          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600"
+        >
+          Refresh now
         </button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {GROUPS.map(group => (
-          <article key={group.title} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <h3 className="text-xl font-bold text-slate-900">{group.title}</h3>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  group.tag === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                }`}
-              >
-                {group.tag}
-              </span>
-            </div>
+      {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
 
-            <p className="mt-2 text-sm text-slate-500">{group.description}</p>
-
-            <div className="mt-4 grid grid-cols-2 gap-y-2 text-sm text-slate-700">
-              <p>{group.amount}</p>
-              <p>{group.members}</p>
-              <p>{group.cadence}</p>
-              <p>{group.round}</p>
-            </div>
-
-            <div className="mt-4">
-              <div className="mb-1 flex items-center justify-between text-sm text-slate-500">
-                <span>Progress</span>
-                <span>{group.progress}%</span>
-              </div>
-              <div className="h-2 rounded-full bg-slate-200">
-                <div className="h-2 rounded-full bg-blue-600" style={{ width: `${group.progress}%` }} />
-              </div>
-            </div>
-
-            <div className="mt-4 text-sm font-semibold text-slate-700">Pool: {group.pool}</div>
-          </article>
-        ))}
-      </div>
+      {hasLoadedOnce && groups.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
+          No groups found.
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {groups.map(group => (
+            <DashboardGroupCard
+              key={group.poolAddress}
+              group={group}
+              onOpen={poolId => {
+                void navigate({
+                  to: '/group/$poolId',
+                  params: { poolId },
+                });
+              }}
+            />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

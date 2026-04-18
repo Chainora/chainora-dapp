@@ -15,5 +15,13 @@ export const buildQrImageUrl = (payload: string, size = 280): string => {
     return '';
   }
 
-  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`;
+  const params = new URLSearchParams({
+    size: `${size}x${size}`,
+    format: 'svg',
+    ecc: 'L',
+    qzone: '2',
+    data: payload,
+  });
+
+  return `https://api.qrserver.com/v1/create-qr-code/?${params.toString()}`;
 };

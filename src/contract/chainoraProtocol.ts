@@ -5,10 +5,25 @@ import { ERC20_ABI, FACTORY_ABI, POOL_ABI, REGISTRY_ABI } from './chainoraAbis';
 
 export type PoolConfig = {
   contributionAmount: bigint;
+  minReputation: bigint;
   targetMembers: number;
   periodDuration: number;
   contributionWindow: number;
   auctionWindow: number;
+  publicRecruitment?: boolean;
+};
+
+export type PoolDiscoveryView = {
+  poolId: bigint;
+  pool: Address;
+  creator: Address;
+  publicRecruitment: boolean;
+  listed: boolean;
+  poolStatus: number;
+  activeMemberCount: bigint;
+  targetMembers: number;
+  contributionAmount: bigint;
+  minReputation: bigint;
 };
 
 const ensureAddress = (address: Address, label: string) => {
@@ -93,11 +108,45 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
         functionName: 'poolById',
         args: [poolId],
       }),
+    recruitingPoolCount: async () =>
+      publicClient.readContract({
+        address: getFactoryAddress(),
+        abi: FACTORY_ABI,
+        functionName: 'recruitingPoolCount',
+      }),
+    recruitingPool: async (poolId: bigint) =>
+      publicClient.readContract({
+        address: getFactoryAddress(),
+        abi: FACTORY_ABI,
+        functionName: 'recruitingPool',
+        args: [poolId],
+      }) as Promise<PoolDiscoveryView>,
+    recruitingPools: async (offset: bigint, limit: bigint) =>
+      publicClient.readContract({
+        address: getFactoryAddress(),
+        abi: FACTORY_ABI,
+        functionName: 'recruitingPools',
+        args: [offset, limit],
+      }) as Promise<PoolDiscoveryView[]>,
   };
 
   const readPool = {
+    creator: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'creator' }),
     poolStatus: async (poolAddress: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'poolStatus' }),
+    publicRecruitment: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'publicRecruitment' }),
+    targetMembers: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'targetMembers' }),
+    minReputation: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'minReputation' }),
+    periodDuration: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'periodDuration' }),
+    contributionWindow: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'contributionWindow' }),
+    auctionWindow: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'auctionWindow' }),
     currentCycle: async (poolAddress: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'currentCycle' }),
     currentPeriod: async (poolAddress: Address) =>
@@ -106,8 +155,14 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'activeMemberCount' }),
     cycleCompleted: async (poolAddress: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'cycleCompleted' }),
+    extendVoteState: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'extendVoteState' }),
     members: async (poolAddress: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'members' }),
+    activeMembers: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'activeMembers' }),
+    allMembers: async (poolAddress: Address) =>
+      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'allMembers' }),
     isMember: async (poolAddress: Address, member: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'isMember', args: [member] }),
     isActiveMember: async (poolAddress: Address, member: Address) =>
@@ -116,6 +171,13 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'memberDeposit', args: [member] }),
     claimableYield: async (poolAddress: Address, member: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'claimableYield', args: [member] }),
+    inviteProposal: async (poolAddress: Address, proposalId: bigint) =>
+      publicClient.readContract({
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'inviteProposal',
+        args: [proposalId],
+      }),
     periodInfo: async (poolAddress: Address, cycleId: bigint, periodId: bigint) =>
       publicClient.readContract({
         address: poolAddress,
@@ -134,11 +196,13 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
         args: [
           {
             contributionAmount: config.contributionAmount,
+            minReputation: config.minReputation,
             targetMembers: config.targetMembers,
             periodDuration: config.periodDuration,
             contributionWindow: config.contributionWindow,
             auctionWindow: config.auctionWindow,
           },
+          config.publicRecruitment ?? true,
         ],
       });
     },
@@ -172,12 +236,43 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
         args: [proposalId, support],
       });
     },
-    acceptInviteAndLockDeposit: async (poolAddress: Address, proposalId: bigint) => {
+    acceptInvite: async (poolAddress: Address, proposalId: bigint) => {
       return writeWithWallet({
         address: poolAddress,
         abi: POOL_ABI,
-        functionName: 'acceptInviteAndLockDeposit',
+        functionName: 'acceptInvite',
         args: [proposalId],
+      });
+    },
+    submitJoinRequest: async (poolAddress: Address) => {
+      return writeWithWallet({
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'submitJoinRequest',
+      });
+    },
+    voteJoinRequest: async (poolAddress: Address, requestId: bigint, support: boolean) => {
+      return writeWithWallet({
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'voteJoinRequest',
+        args: [requestId, support],
+      });
+    },
+    acceptJoinRequest: async (poolAddress: Address, requestId: bigint) => {
+      return writeWithWallet({
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'acceptJoinRequest',
+        args: [requestId],
+      });
+    },
+    cancelJoinRequest: async (poolAddress: Address, requestId: bigint) => {
+      return writeWithWallet({
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'cancelJoinRequest',
+        args: [requestId],
       });
     },
     contribute: async (poolAddress: Address) => {
@@ -207,20 +302,12 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
     finalizePeriod: async (poolAddress: Address) => {
       return writeWithWallet({ address: poolAddress, abi: POOL_ABI, functionName: 'finalizePeriod' });
     },
-    markDefaultAndPause: async (poolAddress: Address, defaultedMember: Address) => {
+    markDefaultAndArchive: async (poolAddress: Address, defaultedMember: Address) => {
       return writeWithWallet({
         address: poolAddress,
         abi: POOL_ABI,
-        functionName: 'markDefaultAndPause',
+        functionName: 'markDefaultAndArchive',
         args: [defaultedMember],
-      });
-    },
-    voteContinueAfterPause: async (poolAddress: Address, support: boolean) => {
-      return writeWithWallet({
-        address: poolAddress,
-        abi: POOL_ABI,
-        functionName: 'voteContinueAfterPause',
-        args: [support],
       });
     },
     voteExtendCycle: async (poolAddress: Address, support: boolean) => {

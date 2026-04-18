@@ -1,4 +1,5 @@
 import { buildQrPayload } from './qrFlow';
+import { CHAINORA_PROTOCOL_ADDRESSES, ZERO_ADDRESS } from '../contract/chainoraAddresses';
 
 export type AuthSessionResponse = {
   sessionId: string;
@@ -43,6 +44,9 @@ export const createAuthSession = async (apiBase: string): Promise<AuthSessionRes
 };
 
 export const buildAuthQrPayload = (apiBase: string, session: AuthSessionResponse): string => {
+  const factoryAddress = CHAINORA_PROTOCOL_ADDRESSES.factory;
+  const hasFactoryAddress = factoryAddress.toLowerCase() !== ZERO_ADDRESS.toLowerCase();
+
   return buildQrPayload({
     feature: 'auth.login',
     apiBase,
@@ -50,6 +54,8 @@ export const buildAuthQrPayload = (apiBase: string, session: AuthSessionResponse
       sessionId: session.sessionId,
       nonce: session.nonce,
       message: `Sign this to login to Chainora: ${session.nonce}`,
+      deviceVerificationFactoryAddress: hasFactoryAddress ? factoryAddress : undefined,
+      autoDeviceVerification: hasFactoryAddress,
     },
   });
 };
