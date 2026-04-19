@@ -238,7 +238,7 @@ export function FinancialSection({ form, errors, setField }: SharedSectionProps)
           <input
             id="members"
             type="number"
-            min={2}
+            min={3}
             max={255}
             value={form.targetMembers}
             onChange={event => setField('targetMembers', event.target.value)}

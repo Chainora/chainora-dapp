@@ -6,6 +6,7 @@ export type GroupStatus =
   | 'funding'
   | 'bidding'
   | 'payout'
+  | 'deadlinepassed'
   | 'ended_period'
   | 'voting_extension'
   | 'archived';
@@ -16,6 +17,7 @@ const VALID_GROUP_STATUSES: GroupStatus[] = [
   'funding',
   'bidding',
   'payout',
+  'deadlinepassed',
   'ended_period',
   'voting_extension',
   'archived',
@@ -79,6 +81,8 @@ export const groupStatusLabel = (status: GroupStatus): string => {
       return 'Bidding';
     case 'payout':
       return 'Payout';
+    case 'deadlinepassed':
+      return 'Deadline Passed';
     case 'ended_period':
       return 'Period Ended';
     case 'voting_extension':
@@ -114,6 +118,7 @@ export const groupStatusRefreshProfile = (
         backendIntervalMs: 30_000,
       };
     case 'ended_period':
+    case 'deadlinepassed':
       return {
         coreIntervalMs: 14_000,
         heavyIntervalMs: 65_000,

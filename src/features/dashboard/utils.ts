@@ -3,18 +3,47 @@ import { formatUnits, getAddress, isAddress } from 'viem';
 import { fromInitAddress } from '../../components/UserDetail';
 import { CONTRIBUTION_SYMBOL } from './constants';
 import type { ApiGroup } from '../../services/groupsService';
+import {
+  deriveGroupStatus,
+  groupStatusLabel,
+  type GroupStatus,
+} from '../../services/groupStatus';
 
-export const statusMeta = (status: number): { label: string; classes: string } => {
+export const deriveDashboardGroupStatus = (group: ApiGroup): GroupStatus => deriveGroupStatus({
+  poolStatus: group.status,
+  periodStatus: group.currentPeriodStatus,
+  cycleCompleted: Boolean(group.cycleCompleted),
+  extendVoteOpen: Boolean(group.extendVoteOpen),
+  backendGroupStatus: group.groupStatus,
+});
+
+const statusToneClass = (status: GroupStatus): string => {
   switch (status) {
-    case 0:
-      return { label: 'Forming', classes: 'bg-amber-100 text-amber-700' };
-    case 1:
-      return { label: 'Active', classes: 'bg-emerald-100 text-emerald-700' };
-    case 2:
-      return { label: 'Archived', classes: 'bg-slate-200 text-slate-700' };
+    case 'forming':
+      return 'bg-amber-100 text-amber-700';
+    case 'deadlinepassed':
+      return 'bg-rose-100 text-rose-700';
+    case 'archived':
+      return 'bg-slate-200 text-slate-700';
+    case 'voting_extension':
+      return 'bg-violet-100 text-violet-700';
+    case 'funding':
+    case 'bidding':
+    case 'payout':
+    case 'ended_period':
+    case 'active':
+      return 'bg-emerald-100 text-emerald-700';
     default:
-      return { label: 'Unknown', classes: 'bg-slate-100 text-slate-600' };
+      return 'bg-slate-100 text-slate-600';
   }
+};
+
+export const statusMeta = (group: ApiGroup): { label: string; classes: string } => {
+  const status = deriveDashboardGroupStatus(group);
+  return {
+    label: groupStatusLabel(status),
+    classes: statusToneClass(status),
+  };
 };
 
 export const formatAmount = (raw: string): string => {
@@ -70,6 +99,7 @@ export const areGroupsEqual = (a: ApiGroup[], b: ApiGroup[]): boolean => {
       || left.status !== right.status
       || left.currentCycle !== right.currentCycle
       || left.currentPeriod !== right.currentPeriod
+      || (left.groupStatus ?? '') !== (right.groupStatus ?? '')
       || left.activeMemberCount !== right.activeMemberCount
       || left.publicRecruitment !== right.publicRecruitment
     ) {

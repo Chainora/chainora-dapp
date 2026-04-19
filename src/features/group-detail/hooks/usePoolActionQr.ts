@@ -141,10 +141,25 @@ export const usePoolActionQr = ({
             setActionError('');
             onActionSuccessRef.current?.(pendingIntent);
             closeDialog();
+            return;
+          }
+
+          if (nextStatus === 'pool_action_pending_confirmation') {
+            setActionMessage(
+              `${pendingIntent.label} was submitted. Chain confirmation is pending, but you can continue using the app.`,
+            );
+            setActionError('');
+            onActionSuccessRef.current?.(pendingIntent);
+            closeDialog();
           }
         },
         socketState => {
-          setStatus(current => (socketState === 'closed' && current === 'pool_action_success' ? current : socketState));
+          setStatus(current => (
+            socketState === 'closed'
+            && (current === 'pool_action_success' || current === 'pool_action_pending_confirmation')
+              ? current
+              : socketState
+          ));
         },
       );
 
@@ -237,7 +252,8 @@ export const usePoolActionQr = ({
       || isPreparing
       || status === 'awaiting_card_scan'
       || status === 'pool_action_signing_tx'
-      || status === 'pool_action_waiting_receipt',
+      || status === 'pool_action_waiting_receipt'
+      || status === 'pool_action_pending_confirmation',
     [isOpen, isPreparing, status],
   );
 
@@ -251,7 +267,7 @@ export const usePoolActionQr = ({
     sessionId: session?.sessionId ?? '',
     qrImageUrl,
     qrLocked,
-    isSuccess: status === 'pool_action_success',
+    isSuccess: status === 'pool_action_success' || status === 'pool_action_pending_confirmation',
     errorMessage,
     actionMessage,
     actionError,

@@ -95,7 +95,7 @@ export function DashboardGroupCard({
   group: ApiGroup;
   onOpen: (poolId: string) => void;
 }) {
-  const status = statusMeta(group.status);
+  const status = statusMeta(group);
   const progress = progressPercent(group);
   const disabled = isGroupDisabled(group);
 

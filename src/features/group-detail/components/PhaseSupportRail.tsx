@@ -1,26 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { toInitAddress } from '../../../components/UserDetail';
 import type { InviteProposalView, MembershipVoteMode } from '../../../components/group-detail/types';
-import type {
-  ApiGroupViewPhaseMeta,
-  ApiGroupViewPeriodMeta,
-} from '../../../services/groupsService';
-import type { GroupStatus } from '../../../services/groupStatus';
-import {
-  compactPhaseLabel,
-  compactUiConfig,
-  supportTabLabel,
-  type CompactUiPhase,
-  type SupportRailTab,
-} from '../compactConfig';
-import type { PhasePermissionViewModel } from '../hooks/usePhasePermissions';
+import { compactUiConfig, supportTabLabel, type CompactUiPhase, type SupportRailTab } from '../compactConfig';
 import type { MemberPhaseView } from './MemberStatePanel';
 import { StatusBadge } from './StatusBadge';
-
-type InfoRow = {
-  label: string;
-  value: string;
-};
 
 const OverflowSlider = ({
   value,
@@ -36,9 +20,6 @@ const OverflowSlider = ({
   </div>
 );
 
-const secondaryButtonClass =
-  'inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60';
-
 const positiveButtonClass =
   'inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60';
 
@@ -46,13 +27,13 @@ const warningButtonClass =
   'inline-flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60';
 
 const toneByMemberState = (state: string): 'success' | 'warning' | 'info' | 'muted' => {
-  if (['paid', 'best_bidder', 'recipient_claimed', 'completed'].includes(state)) {
+  if (['paid', 'best_bidder', 'recipient_claimed', 'completed', 'vote_continue'].includes(state)) {
     return 'success';
   }
-  if (['unpaid', 'recipient_pending', 'pending_finalize'].includes(state)) {
+  if (['unpaid', 'recipient_pending', 'pending_finalize', 'vote_end'].includes(state)) {
     return 'warning';
   }
-  if (['eligible', 'waiting_turn'].includes(state)) {
+  if (['eligible', 'waiting_turn', 'vote_pending'].includes(state)) {
     return 'info';
   }
   return 'muted';
@@ -63,6 +44,11 @@ const resolveMemberBadgeLabel = (params: {
   memberBadge: string | undefined;
   memberState: string;
 }): string | null => {
+  if (params.uiPhase === 'ending' && params.memberState === 'pending_finalize') {
+    const endingLabel = (params.memberBadge ?? '').trim();
+    return endingLabel || null;
+  }
+
   const rawLabel = params.memberBadge || params.memberState;
   if (params.uiPhase === 'forming' && rawLabel.trim().toLowerCase() === 'unpaid') {
     return null;
@@ -70,98 +56,24 @@ const resolveMemberBadgeLabel = (params: {
   return rawLabel;
 };
 
-const formatTimestamp = (unixSeconds: number | undefined): string => {
-  if (!unixSeconds || unixSeconds <= 0) {
-    return 'N/A';
-  }
-  return new Date(unixSeconds * 1000).toLocaleString();
-};
-
-const buildInfoRows = (params: {
-  uiPhase: CompactUiPhase;
-  groupStatus: GroupStatus;
-  periodMeta: ApiGroupViewPeriodMeta | undefined;
-  phaseMeta: ApiGroupViewPhaseMeta | undefined;
-  claimableYieldLabel: string;
-}): InfoRow[] => {
-  const { uiPhase, groupStatus, periodMeta, phaseMeta, claimableYieldLabel } = params;
-  const rows: InfoRow[] = [
-    { label: 'Lifecycle', value: compactPhaseLabel(uiPhase) },
-    { label: 'Group status', value: groupStatus.replace(/_/g, ' ') },
-    { label: 'Phase status', value: phaseMeta?.phaseStatus ?? 'N/A' },
-    { label: 'Countdown', value: phaseMeta?.countdownLabel ?? 'N/A' },
-  ];
-
-  if (uiPhase === 'funding') {
-    rows.push(
-      { label: 'Contribution deadline', value: formatTimestamp(periodMeta?.contributionDeadline) },
-      { label: 'Total contributed', value: periodMeta?.totalContributed ?? '0' },
-    );
-  } else if (uiPhase === 'bidding') {
-    rows.push(
-      { label: 'Auction deadline', value: formatTimestamp(periodMeta?.auctionDeadline) },
-      { label: 'Best discount', value: periodMeta?.bestDiscount ?? '0' },
-      { label: 'Best bidder', value: periodMeta?.bestBidder || 'Not selected' },
-    );
-  } else if (uiPhase === 'payout') {
-    rows.push(
-      { label: 'Recipient', value: periodMeta?.recipient || 'Not selected' },
-      { label: 'Payout amount', value: periodMeta?.payoutAmount ?? '0' },
-      { label: 'Claimed', value: periodMeta?.payoutClaimed ? 'Yes' : 'No' },
-    );
-  } else if (uiPhase === 'ending') {
-    rows.push(
-      { label: 'Period end', value: formatTimestamp(periodMeta?.periodEndAt) },
-      { label: 'Total contributed', value: periodMeta?.totalContributed ?? '0' },
-    );
-  }
-
-  rows.push({ label: 'Claimable yield', value: claimableYieldLabel });
-  return rows;
-};
-
 export function PhaseSupportRail({
   uiPhase,
-  groupStatus,
   members,
   proposals,
-  periodMeta,
-  phaseMeta,
-  permissions,
-  claimableYieldLabel,
   isMember,
   isConnected,
   isActing,
   viewerAddress,
-  canProposeInvite,
-  candidateAddress,
-  onCandidateAddressChange,
-  onProposeInvite,
   onVoteProposal,
-  onAcceptProposal,
-  onClaimYield,
-  onCloseAuction,
 }: {
   uiPhase: CompactUiPhase;
-  groupStatus: GroupStatus;
   members: MemberPhaseView[];
   proposals: InviteProposalView[];
-  periodMeta: ApiGroupViewPeriodMeta | undefined;
-  phaseMeta: ApiGroupViewPhaseMeta | undefined;
-  permissions: PhasePermissionViewModel;
-  claimableYieldLabel: string;
   isMember: boolean;
   isConnected: boolean;
   isActing: boolean;
   viewerAddress: string | null;
-  canProposeInvite: boolean;
-  candidateAddress: string;
-  onCandidateAddressChange: (value: string) => void;
-  onProposeInvite: (candidateAddress: string) => void;
   onVoteProposal: (proposalId: string, voteMode: MembershipVoteMode, support: boolean) => void;
-  onAcceptProposal: (proposalId: string, voteMode: MembershipVoteMode) => void;
-  onClaimYield: () => void;
-  onCloseAuction: () => void;
 }) {
   const tabs = useMemo(() => compactUiConfig.panelTabOrderByPhase[uiPhase], [uiPhase]);
   const [activeTab, setActiveTab] = useState<SupportRailTab>(tabs[0]);
@@ -171,39 +83,29 @@ export function PhaseSupportRail({
     setActiveTab(tabs[0]);
   }, [tabs]);
 
-  const infoRows = useMemo(() => buildInfoRows({
-    uiPhase,
-    groupStatus,
-    periodMeta,
-    phaseMeta,
-    claimableYieldLabel,
-  }), [claimableYieldLabel, groupStatus, periodMeta, phaseMeta, uiPhase]);
-
   const visibleMembers = members;
   const visibleProposals = proposals;
-  const visibleInfoRows = infoRows;
 
   return (
     <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-slate-900">Support Rail</h3>
-        <StatusBadge label={supportTabLabel(activeTab, uiPhase)} tone="default" />
-      </div>
+      <h3 className="text-sm font-semibold text-slate-900">Support Rail</h3>
 
-      <div className="mt-2 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
-        {tabs.map(tab => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-              tab === activeTab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:bg-white/70'
-            }`}
-          >
-            {supportTabLabel(tab, uiPhase)}
-          </button>
-        ))}
-      </div>
+      {tabs.length > 1 ? (
+        <div className="mt-2 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+          {tabs.map(tab => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                tab === activeTab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:bg-white/70'
+              }`}
+            >
+              {supportTabLabel(tab, uiPhase)}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="mt-3 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
         {activeTab === 'members' ? (
@@ -223,6 +125,12 @@ export function PhaseSupportRail({
                       className="text-xs font-semibold text-slate-900"
                     />
                     <OverflowSlider value={member.secondaryLabel} className="text-[11px] text-slate-500" />
+                    {uiPhase === 'bidding' ? (
+                      <OverflowSlider
+                        value={member.bidAmountRaw ? `Bid: ${member.bidAmountRaw}` : 'Bid: no bid yet'}
+                        className="text-[11px] text-slate-600"
+                      />
+                    ) : null}
                   </div>
                   {badgeLabel ? <StatusBadge label={badgeLabel} tone={toneByMemberState(member.state)} /> : null}
                 </div>
@@ -236,25 +144,6 @@ export function PhaseSupportRail({
 
         {activeTab === 'votes' ? (
           <div className="space-y-2">
-            {isMember ? (
-              <div className="grid grid-cols-[1fr_auto] gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2">
-                <input
-                  value={candidateAddress}
-                  onChange={event => onCandidateAddressChange(event.target.value)}
-                  placeholder="Candidate wallet"
-                  className="min-w-0 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700"
-                />
-                <button
-                  type="button"
-                  disabled={!isConnected || isActing || !canProposeInvite || candidateAddress.trim() === ''}
-                  onClick={() => onProposeInvite(candidateAddress)}
-                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Invite
-                </button>
-              </div>
-            ) : null}
-
             {visibleProposals.map(proposal => {
               const canAccept = proposal.open
                 && proposal.yesVotes >= proposal.requiredYesVotes
@@ -264,24 +153,27 @@ export function PhaseSupportRail({
               const canVoteNow = isMember && proposal.canVote;
               const voteStateLabel = proposal.myVote
                 ? `You voted ${proposal.myVote}`
-                : canVoteNow
-                  ? 'Eligible to vote'
-                  : !proposal.open
-                    ? 'Voting closed'
-                    : !isMember
-                      ? 'Read-only'
-                      : proposal.snapshotEligible === false
-                        ? 'Not in voter set when this proposal opened'
-                        : 'Voting unavailable';
+                : canAccept
+                  ? 'Approved. Confirm in Forming workspace.'
+                  : canVoteNow
+                    ? 'Eligible to vote'
+                    : !proposal.open
+                      ? 'Voting closed'
+                      : !isMember
+                        ? 'Read-only'
+                        : proposal.snapshotEligible === false
+                          ? 'Not in voter set when this proposal opened'
+                          : 'Voting unavailable';
               const proposalTypeLabel = proposal.voteMode === 'invite' ? 'Invite' : 'Join request';
               const candidateLabel = proposal.candidateUsername?.trim() || 'Unknown user';
+              const candidateInitAddress = toInitAddress(proposal.candidate) || proposal.candidate;
 
               return (
                 <div key={`${proposal.voteMode}-${proposal.proposalId}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <OverflowSlider value={candidateLabel} className="text-xs font-semibold text-slate-900" />
-                      <OverflowSlider value={proposal.candidate} className="text-[11px] font-mono text-slate-500" />
+                      <OverflowSlider value={candidateInitAddress} className="text-[11px] font-mono text-slate-500" />
                       <p className="text-[11px] text-slate-500">{proposalTypeLabel} #{proposal.proposalId}</p>
                       <p className="text-[11px] text-slate-500">Voter set at open: {proposal.quorumMemberCount}</p>
                     </div>
@@ -291,17 +183,6 @@ export function PhaseSupportRail({
                   </div>
 
                   <div className="mt-2 flex flex-wrap justify-end gap-2">
-                    {canAccept ? (
-                      <button
-                        type="button"
-                        disabled={!isConnected || isActing}
-                        onClick={() => onAcceptProposal(proposal.proposalId, proposal.voteMode)}
-                        className={positiveButtonClass}
-                      >
-                        Accept
-                      </button>
-                    ) : null}
-
                     {canVoteNow ? (
                       <>
                         <button
@@ -336,40 +217,6 @@ export function PhaseSupportRail({
                 No invites or requests.
               </p>
             ) : null}
-          </div>
-        ) : null}
-
-        {activeTab === 'info' ? (
-          <div className="space-y-2">
-            {visibleInfoRows.map(item => (
-              <div key={item.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
-                <div className="mt-0.5">
-                  <OverflowSlider value={item.value} className="text-xs font-semibold text-slate-800" />
-                </div>
-              </div>
-            ))}
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                disabled={!permissions.canClaimYield || isActing}
-                onClick={onClaimYield}
-                title={!permissions.canClaimYield ? permissions.disabledReason : undefined}
-                className={secondaryButtonClass}
-              >
-                Claim Yield
-              </button>
-              <button
-                type="button"
-                disabled={!permissions.canCloseAuction || isActing || uiPhase !== 'bidding'}
-                onClick={onCloseAuction}
-                title={!permissions.canCloseAuction ? permissions.disabledReason : undefined}
-                className={secondaryButtonClass}
-              >
-                Close Auction
-              </button>
-            </div>
           </div>
         ) : null}
       </div>

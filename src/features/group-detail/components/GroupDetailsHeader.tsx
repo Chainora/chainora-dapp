@@ -1,4 +1,4 @@
-import type { ApiGroup, GroupPhase, GroupPhaseStatus } from '../../../services/groupsService';
+import type { ApiGroup, ApiGroupViewPeriodMeta, GroupPhase, GroupPhaseStatus } from '../../../services/groupsService';
 import { phaseLabel } from '../model';
 import { StatusBadge } from './StatusBadge';
 import { PhaseCountdown } from './PhaseCountdown';
@@ -13,6 +13,8 @@ const lifecycleTone = (status: string): 'warning' | 'info' | 'success' | 'muted'
     case 'ended_period':
     case 'voting_extension':
       return 'info';
+    case 'deadlinepassed':
+      return 'warning';
     case 'archived':
       return 'success';
     default:
@@ -31,6 +33,7 @@ const toDurationLabel = (seconds: number): string => {
   if (seconds <= 0) {
     return 'N/A';
   }
+
   const days = Math.floor(seconds / 86_400);
   const hours = Math.floor((seconds % 86_400) / 3_600);
   const minutes = Math.floor((seconds % 3_600) / 60);
@@ -49,6 +52,35 @@ const avatarInitial = (name: string): string => {
   return normalized ? normalized.charAt(0).toUpperCase() : 'G';
 };
 
+const formatDateTime = (unixSeconds: number): string => {
+  if (!unixSeconds || unixSeconds <= 0) {
+    return 'N/A';
+  }
+  return new Date(unixSeconds * 1000).toLocaleString();
+};
+
+const getPhaseWindow = (
+  phase: GroupPhase,
+  periodMeta: ApiGroupViewPeriodMeta | undefined,
+): { startAt: number; endAt: number } => {
+  if (!periodMeta) {
+    return { startAt: 0, endAt: 0 };
+  }
+
+  switch (phase) {
+    case 'funding':
+      return { startAt: periodMeta.startAt, endAt: periodMeta.contributionDeadline };
+    case 'bidding':
+      return { startAt: periodMeta.contributionDeadline, endAt: periodMeta.auctionDeadline };
+    case 'payout':
+      return { startAt: periodMeta.auctionDeadline, endAt: periodMeta.periodEndAt };
+    case 'ending':
+      return { startAt: periodMeta.periodEndAt, endAt: 0 };
+    default:
+      return { startAt: 0, endAt: 0 };
+  }
+};
+
 export function GroupDetailsHeader({
   group,
   groupStatus,
@@ -57,6 +89,7 @@ export function GroupDetailsHeader({
   membersLabel,
   contributionLabel,
   totalPayoutLabel,
+  periodMeta,
   phaseStatus,
   countdownSeconds,
   countdownLabel,
@@ -68,16 +101,26 @@ export function GroupDetailsHeader({
   membersLabel: string;
   contributionLabel: string;
   totalPayoutLabel: string;
+  periodMeta?: ApiGroupViewPeriodMeta;
   phaseStatus: GroupPhaseStatus;
   countdownSeconds: number;
   countdownLabel: string;
 }) {
+  const phaseWindow = getPhaseWindow(activePhase, periodMeta);
+  const stats = [
+    { label: 'Members', value: membersLabel },
+    { label: 'Per Contribution', value: contributionLabel },
+    { label: 'Payout Target', value: totalPayoutLabel },
+    { label: 'Contribution Window', value: toDurationLabel(group.contributionWindow) },
+    { label: 'Auction Window', value: toDurationLabel(group.auctionWindow) },
+  ];
+
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1.5">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="relative mt-0.5 h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+    <article className="rounded-2xl border border-slate-200 bg-white p-3">
+      <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-stretch">
+        <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+          <div className="flex items-start gap-3">
+            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
               {group.groupImageUrl ? (
                 <img
                   src={group.groupImageUrl}
@@ -92,52 +135,57 @@ export function GroupDetailsHeader({
               )}
             </div>
 
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-xl font-black tracking-tight text-slate-900">{group.name}</h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <h1 className="truncate text-lg font-black tracking-tight text-slate-900 md:text-xl">{group.name}</h1>
                 <StatusBadge label={lifecycleLabel(groupStatus)} tone={lifecycleTone(groupStatus)} />
                 <StatusBadge label={group.publicRecruitment ? 'Public' : 'Private'} tone="default" />
               </div>
-              <p className="break-all text-xs font-mono text-slate-500">Pool: {group.poolAddress}</p>
+              <p className="mt-1 break-all text-[11px] font-mono text-slate-500">Pool: {group.poolAddress}</p>
             </div>
+          </div>
+
+          <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+            {stats.map(item => (
+              <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
+                <p className="mt-0.5 text-xs font-bold text-slate-900">{item.value}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Current active phase</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">
-            Period {activePeriod} / {phaseLabel(activePhase)}
-          </p>
-          <div className="mt-1.5">
+        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 px-3 py-2.5">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Current Period</p>
+              <p className="text-sm font-bold text-slate-900">#{activePeriod}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Active Phase</p>
+              <p className="text-sm font-bold text-slate-900">{phaseLabel(activePhase)}</p>
+            </div>
+          </div>
+
+          <div className="mt-2.5 rounded-lg border border-slate-200 bg-white/90 px-2.5 py-2">
             <PhaseCountdown
               phaseStatus={phaseStatus}
               countdownSeconds={countdownSeconds}
               countdownLabel={countdownLabel}
+              variant="hero"
             />
           </div>
-        </div>
-      </div>
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Members</p>
-          <p className="text-xs font-bold text-slate-900">{membersLabel}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Per Contribution</p>
-          <p className="text-xs font-bold text-slate-900">{contributionLabel}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Payout Target</p>
-          <p className="text-xs font-bold text-slate-900">{totalPayoutLabel}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Contribution Window</p>
-          <p className="text-xs font-bold text-slate-900">{toDurationLabel(group.contributionWindow)}</p>
-        </div>
-        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Auction Window</p>
-          <p className="text-xs font-bold text-slate-900">{toDurationLabel(group.auctionWindow)}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Phase Start</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-900">{formatDateTime(phaseWindow.startAt)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Phase End</p>
+              <p className="mt-0.5 text-[11px] font-semibold text-slate-900">{formatDateTime(phaseWindow.endAt)}</p>
+            </div>
+          </div>
         </div>
       </div>
     </article>

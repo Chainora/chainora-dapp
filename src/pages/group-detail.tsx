@@ -75,11 +75,11 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
 
   return (
     <section
-      className={`relative mx-auto max-w-6xl ${isCompactViewport ? 'h-[calc(100svh-11rem)] overflow-hidden' : 'space-y-4 pb-6'}`}
+      className={`relative mx-auto max-w-6xl -mt-4 ${isCompactViewport ? 'h-[calc(100svh-10.5rem)] overflow-hidden' : 'space-y-4 pb-6'}`}
     >
       <div className="pointer-events-none absolute inset-x-0 -top-10 -z-10 h-72 bg-[radial-gradient(80%_100%_at_15%_0%,rgba(186,230,253,0.62)_0%,rgba(255,255,255,0)_70%),radial-gradient(60%_85%_at_100%_5%,rgba(254,243,199,0.58)_0%,rgba(255,255,255,0)_70%)]" />
 
-      <div className={isCompactViewport ? 'grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-3' : 'flex flex-col gap-3'}>
+      <div className={isCompactViewport ? 'grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-2.5' : 'flex flex-col gap-2.5'}>
         <DetailTopBar
           isRefreshing={detail.isRefreshing}
           onBack={() => {
@@ -96,15 +96,16 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
           membersLabel={detail.membersLabel}
           contributionLabel={detail.contributionLabel}
           totalPayoutLabel={detail.totalPayoutLabel}
+          periodMeta={detail.periodMeta}
           phaseStatus={phaseStatus}
           countdownSeconds={countdownSeconds}
           countdownLabel={countdownLabel}
         />
 
-        <div className={isCompactViewport ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3' : 'grid gap-3'}>
+        <div className={isCompactViewport ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2.5' : 'grid gap-2.5'}>
           <PoolTimeline activePhase={uiPhase} groupStatus={detail.groupStatus} />
 
-          <div className={`grid gap-3 ${isCompactViewport ? 'min-h-0 h-full lg:grid-cols-[1.5fr_1fr]' : 'lg:grid-cols-[1.5fr_1fr]'}`}>
+          <div className={`grid gap-2.5 ${isCompactViewport ? 'min-h-0 h-full lg:grid-cols-2' : 'lg:grid-cols-2'}`}>
             <div className={isCompactViewport ? 'min-h-0 h-full' : ''}>
               <PhasePrimaryPanel
                 uiPhase={uiPhase}
@@ -113,7 +114,10 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
                 memberStates={detail.memberStates}
                 permissions={detail.permissions}
                 isViewerMember={detail.isViewerMember}
+                isConnected={detail.isConnected}
                 isActing={detail.poolAction.isActing}
+                canProposeInvite={detail.canProposeInvite}
+                candidateAddress={detail.candidateAddress}
                 canConfirmJoin={detail.canConfirmJoin}
                 confirmJoinLabel={detail.confirmJoinLabel}
                 canRequestJoin={detail.canRequestJoin}
@@ -121,6 +125,8 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
                 contributionLabel={detail.contributionLabel}
                 bidDiscountInput={detail.bidDiscountInput}
                 onBidDiscountChange={detail.setBidDiscountInput}
+                onCandidateAddressChange={detail.setCandidateAddress}
+                onProposeInvite={detail.onProposeInvite}
                 onRequestJoin={detail.onRequestJoin}
                 onConfirmJoin={detail.onConfirmJoin}
                 onContribute={detail.onContribute}
@@ -136,25 +142,13 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
             <div className={isCompactViewport ? 'min-h-0 h-full' : ''}>
               <PhaseSupportRail
                 uiPhase={uiPhase}
-                groupStatus={detail.groupStatus}
                 members={detail.memberPhaseViews}
                 proposals={detail.inviteProposals}
-                periodMeta={detail.periodMeta}
-                phaseMeta={detail.phaseMeta}
-                permissions={detail.permissions}
-                claimableYieldLabel={detail.claimableYieldLabel}
                 isMember={detail.isViewerMember}
                 isConnected={detail.isConnected}
                 isActing={detail.poolAction.isActing}
                 viewerAddress={detail.viewerAddress}
-                canProposeInvite={detail.canProposeInvite}
-                candidateAddress={detail.candidateAddress}
-                onCandidateAddressChange={detail.setCandidateAddress}
-                onProposeInvite={detail.onProposeInvite}
                 onVoteProposal={detail.onVoteProposal}
-                onAcceptProposal={detail.onAcceptMembershipProposal}
-                onClaimYield={detail.onClaimYield}
-                onCloseAuction={detail.onCloseAuction}
               />
             </div>
           </div>

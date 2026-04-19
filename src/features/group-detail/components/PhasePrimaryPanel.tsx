@@ -5,6 +5,7 @@ import type {
 import type { GroupStatus } from '../../../services/groupStatus';
 import { compactPhaseLabel, type CompactUiPhase } from '../compactConfig';
 import type { PhasePermissionViewModel } from '../hooks/usePhasePermissions';
+import { formatToken } from '../utils';
 import { StatusBadge } from './StatusBadge';
 
 const primaryButtonClass =
@@ -17,7 +18,10 @@ export function PhasePrimaryPanel({
   memberStates,
   permissions,
   isViewerMember,
+  isConnected,
   isActing,
+  canProposeInvite,
+  candidateAddress,
   canConfirmJoin,
   confirmJoinLabel,
   canRequestJoin,
@@ -25,6 +29,8 @@ export function PhasePrimaryPanel({
   contributionLabel,
   bidDiscountInput,
   onBidDiscountChange,
+  onCandidateAddressChange,
+  onProposeInvite,
   onRequestJoin,
   onContribute,
   onSubmitBid,
@@ -41,7 +47,10 @@ export function PhasePrimaryPanel({
   memberStates: ApiGroupViewMemberState[];
   permissions: PhasePermissionViewModel;
   isViewerMember: boolean;
+  isConnected: boolean;
   isActing: boolean;
+  canProposeInvite: boolean;
+  candidateAddress: string;
   canConfirmJoin: boolean;
   confirmJoinLabel: string;
   canRequestJoin: boolean;
@@ -49,6 +58,8 @@ export function PhasePrimaryPanel({
   contributionLabel: string;
   bidDiscountInput: string;
   onBidDiscountChange: (value: string) => void;
+  onCandidateAddressChange: (value: string) => void;
+  onProposeInvite: (candidateAddress: string) => void;
   onRequestJoin: () => void;
   onContribute: () => void;
   onSubmitBid: () => void;
@@ -62,6 +73,13 @@ export function PhasePrimaryPanel({
   const paidCount = memberStates.filter(member => member.state === 'paid').length;
   const totalMembers = memberStates.length;
   const bestDiscount = periodMeta?.bestDiscount ?? '0';
+  const inviteDisabledReason = !isConnected
+    ? 'Connect wallet to invite.'
+    : !canProposeInvite
+      ? 'Only active members can invite during forming.'
+      : candidateAddress.trim() === ''
+        ? 'Enter candidate username or wallet.'
+        : '';
 
   if (uiPhase === 'forming') {
     return (
@@ -72,11 +90,34 @@ export function PhasePrimaryPanel({
         </div>
         <p className="mt-2 text-sm text-slate-600">
           {isViewerMember
-            ? 'Group is collecting members. Manage proposals in the support rail.'
+            ? 'Group is collecting members. Invite candidates here and monitor votes in support rail.'
             : 'Group is forming. Request to join if recruitment is still open.'}
         </p>
 
-        <div className="mt-auto space-y-2">
+        <div className="mt-auto space-y-3">
+          {isViewerMember ? (
+            <>
+              <input
+                value={candidateAddress}
+                onChange={event => onCandidateAddressChange(event.target.value)}
+                placeholder="Candidate username / init / 0x wallet"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"
+              />
+              <button
+                type="button"
+                disabled={!isConnected || isActing || !canProposeInvite || candidateAddress.trim() === ''}
+                onClick={() => onProposeInvite(candidateAddress)}
+                title={inviteDisabledReason || undefined}
+                className={`w-full ${primaryButtonClass}`}
+              >
+                {isActing ? 'Preparing...' : 'Invite Candidate'}
+              </button>
+              {inviteDisabledReason ? (
+                <p className="text-xs text-slate-500">{inviteDisabledReason}</p>
+              ) : null}
+            </>
+          ) : null}
+
           {!isViewerMember && canConfirmJoin ? (
             <button
               type="button"
@@ -169,6 +210,7 @@ export function PhasePrimaryPanel({
             className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
           />
           <p className="mt-2 text-xs text-slate-600">Best discount now: {bestDiscount}</p>
+          <p className="text-xs text-slate-500">Your bid must be greater than current best discount.</p>
         </div>
 
         <div className="mt-auto space-y-2">
@@ -196,11 +238,13 @@ export function PhasePrimaryPanel({
           <h2 className="text-lg font-bold text-slate-900">Payout Workspace</h2>
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">Recipient claims the payout once the auction closes.</p>
+        <p className="mt-2 text-sm text-slate-600">
+          Recipient claims payout in this phase. If recipient does not claim before period end, ending phase can finalize and auto-transfer payout.
+        </p>
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Payout amount</p>
-          <p className="mt-1 text-base font-bold text-slate-900">{periodMeta?.payoutAmount ?? '0'}</p>
+          <p className="mt-1 text-base font-bold text-slate-900">{formatToken(periodMeta?.payoutAmount ?? '0')}</p>
         </div>
 
         <div className="mt-auto space-y-2">
@@ -263,7 +307,9 @@ export function PhasePrimaryPanel({
         <h2 className="text-lg font-bold text-slate-900">Ending Workspace</h2>
         <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
       </div>
-      <p className="mt-2 text-sm text-slate-600">Finalize this period before moving to the next state.</p>
+      <p className="mt-2 text-sm text-slate-600">
+        Any active member can finalize after period end. Finalize will auto-transfer payout to recipient if still unclaimed, then open next period.
+      </p>
 
       <div className="mt-auto space-y-2">
         <button

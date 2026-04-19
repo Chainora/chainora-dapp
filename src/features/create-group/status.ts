@@ -22,7 +22,7 @@ export const mapCreatePoolStatusMessage = (status: string): string => {
     case 'create_pool_signing_tx':
       return 'Signing create-pool transaction on card...';
     case 'create_pool_waiting_receipt':
-      return 'Waiting for create-pool transaction confirmation...';
+      return 'Waiting for create-pool transaction confirmation... Transaction is already submitted and cannot be cancelled.';
     case 'create_pool_syncing_backend':
       return 'Syncing created group to backend...';
     case 'create_pool_success':

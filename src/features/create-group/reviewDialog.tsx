@@ -1,13 +1,5 @@
-import {
-  CONTRIBUTION_SYMBOL,
-  toContractDurations,
-  type CreateGroupInput,
-} from './formSchema';
-
 export function CreateGroupReviewDialog({
   open,
-  reviewInput,
-  reviewSessionId,
   reviewWsStatus,
   reviewStatusMessage,
   isPreparingReviewSession,
@@ -20,8 +12,6 @@ export function CreateGroupReviewDialog({
   onDone,
 }: {
   open: boolean;
-  reviewInput: CreateGroupInput | null;
-  reviewSessionId: string;
   reviewWsStatus: string;
   reviewStatusMessage: string;
   isPreparingReviewSession: boolean;
@@ -37,17 +27,13 @@ export function CreateGroupReviewDialog({
     return null;
   }
 
-  const reviewDurations = reviewInput
-    ? toContractDurations(reviewInput.periodDuration, reviewInput.auctionWindow, reviewInput.contributionWindow)
-    : null;
-
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/55 p-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+      <div className="max-h-[90svh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl ring-1 ring-slate-200">
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-sky-500">Chainora Native Wallet</p>
-            <h2 className="mt-2 text-xl font-bold text-slate-900">Scan and sign create group</h2>
+            <h2 className="mt-1.5 text-lg font-bold text-slate-900">Scan and sign create group</h2>
           </div>
           <button
             type="button"
@@ -59,44 +45,31 @@ export function CreateGroupReviewDialog({
           </button>
         </div>
 
-        <div className="mt-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-          <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Session Status</p>
-          <p className="mt-1 text-sm font-semibold text-slate-900">{isPreparingReviewSession ? 'creating_session' : reviewWsStatus}</p>
-          {reviewSessionId ? <p className="mt-1 text-xs text-slate-500">Session: {reviewSessionId}</p> : null}
-          <p className="mt-2 text-sm font-semibold text-sky-700">{reviewStatusMessage}</p>
+        <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
+          <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Status</p>
+          <p className="mt-1 text-sm font-semibold text-sky-700">{reviewStatusMessage}</p>
+          <p className="mt-1 text-xs text-slate-500">{isPreparingReviewSession ? 'Preparing session...' : reviewWsStatus}</p>
         </div>
 
-        <div className="mt-5 grid place-items-center">
+        <div className="mt-3 grid place-items-center">
           {isReviewQrLocked && !isCreatePoolSuccess ? (
-            <div className="flex h-[320px] w-[320px] items-center justify-center rounded-xl bg-sky-50 p-5 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
+            <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-5 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
               QR locked after first scan. Continue in native app and tap NFC card to complete create-pool.
             </div>
           ) : qrImageUrl ? (
-            <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
-              <img src={qrImageUrl} alt="Create Group Review QR" className="h-[320px] w-[320px] rounded-lg object-contain" />
+            <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+              <img src={qrImageUrl} alt="Create Group Review QR" className="h-[260px] w-[260px] rounded-lg object-contain" />
             </div>
           ) : (
-            <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
+            <div className="flex h-[220px] w-[220px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
               {isPreparingReviewSession ? 'Preparing QR session...' : 'Unable to generate QR payload'}
             </div>
           )}
         </div>
-        <p className="mt-3 text-center text-xs text-slate-500">For best scan quality, keep your screen brightness high and hold the phone steady 15-25 cm away.</p>
-        {reviewDialogError ? <p className="mt-3 text-sm font-medium text-rose-600">{reviewDialogError}</p> : null}
+        <p className="mt-2 text-center text-xs text-slate-500">Hold phone steady 15-25 cm for best QR scan.</p>
+        {reviewDialogError ? <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{reviewDialogError}</p> : null}
 
-        {reviewInput && reviewDurations ? (
-          <div className="mt-4 rounded-xl border border-slate-200 p-3 text-xs text-slate-600">
-            <p>visibility: {reviewInput.groupVisibility === 'public' ? 'Public discovery' : 'Private invite-only'}</p>
-            <p>contributionAmount: {reviewInput.amountPerPeriod} {CONTRIBUTION_SYMBOL}</p>
-            <p>targetMembers: {reviewInput.targetMembers}</p>
-            <p>groupImageUrl: {reviewInput.groupImageUrl?.trim() ? 'attached' : 'none'}</p>
-            <p>periodDuration: {reviewDurations.periodDurationSeconds}s</p>
-            <p>auctionWindow: {reviewDurations.auctionWindowSeconds}s</p>
-            <p>contributionWindow: {reviewDurations.contributionWindowSeconds}s</p>
-          </div>
-        ) : null}
-
-        <div className="mt-5 flex items-center justify-end gap-3">
+        <div className="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
             className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700"

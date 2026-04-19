@@ -109,7 +109,9 @@ export const mapPoolActionStatusMessage = (status: string): string => {
     case 'pool_action_signing_tx':
       return 'Signing transaction on card...';
     case 'pool_action_waiting_receipt':
-      return 'Waiting for on-chain confirmation...';
+      return 'Waiting for on-chain confirmation... Transaction is already submitted and cannot be cancelled.';
+    case 'pool_action_pending_confirmation':
+      return 'Transaction submitted. Chain confirmation is pending because RPC is slow.';
     case 'pool_action_success':
       return 'Transaction confirmed on-chain.';
     case 'pool_action_failed':
@@ -135,7 +137,11 @@ export const shouldLockPoolActionQr = (status: string): boolean => {
     return true;
   }
 
-  return status === 'pool_action_signing_tx' || status === 'pool_action_waiting_receipt';
+  return (
+    status === 'pool_action_signing_tx'
+    || status === 'pool_action_waiting_receipt'
+    || status === 'pool_action_pending_confirmation'
+  );
 };
 
 export const toPoolActionToastMessage = (actionKey: string, fallbackLabel: string): string => {

@@ -17,9 +17,42 @@ import {
 import { filterJoinedGroupsWithTimeout } from '../features/dashboard/groupMembership';
 import type { DashboardMode } from '../features/dashboard/types';
 import { DashboardGroupCard, DashboardStats } from '../features/dashboard/ui';
-import { areGroupsEqual, formatAmount, normalizeViewerAddress } from '../features/dashboard/utils';
+import {
+  areGroupsEqual,
+  deriveDashboardGroupStatus,
+  formatAmount,
+  normalizeViewerAddress,
+} from '../features/dashboard/utils';
 import { useAuth } from '../context/AuthContext';
 import { fetchGroups, type ApiGroup, type GroupVisibility } from '../services/groupsService';
+
+const isDocumentVisible = (): boolean => {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+  return document.visibilityState === 'visible';
+};
+
+const toUnixMs = (value: string | undefined): number => {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const sortDashboardGroups = (groups: ApiGroup[]): ApiGroup[] =>
+  [...groups].sort((left, right) => {
+    const updatedDelta = toUnixMs(right.updatedAt) - toUnixMs(left.updatedAt);
+    if (updatedDelta !== 0) {
+      return updatedDelta;
+    }
+    const createdDelta = toUnixMs(right.createdAt) - toUnixMs(left.createdAt);
+    if (createdDelta !== 0) {
+      return createdDelta;
+    }
+    return left.poolId.localeCompare(right.poolId);
+  });
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -31,15 +64,24 @@ export function DashboardPage() {
   const [query, setQuery] = useState('');
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
-  const loadInFlightRef = useRef(false);
+  const loadSeqRef = useRef(0);
+  const latestLoadKeyRef = useRef('');
   const viewerAddress = useMemo(() => normalizeViewerAddress(address), [address]);
 
-  const loadGroups = useCallback(async (sync = false) => {
-    if (!token || loadInFlightRef.current) {
+  const loadGroups = useCallback(async () => {
+    if (!token) {
       return;
     }
 
-    loadInFlightRef.current = true;
+    const normalizedQuery = query.trim();
+    const loadKey = `${mode}:${normalizedQuery.toLowerCase()}:${viewerAddress.toLowerCase()}`;
+    const loadSeq = loadSeqRef.current + 1;
+    loadSeqRef.current = loadSeq;
+    latestLoadKeyRef.current = loadKey;
+
+    const shouldApply = (): boolean =>
+      loadSeq === loadSeqRef.current && latestLoadKeyRef.current === loadKey;
+
     setError('');
 
     try {
@@ -47,13 +89,17 @@ export function DashboardPage() {
       let result: ApiGroup[];
       const scope = 'all';
       const visibility: GroupVisibility = mode === 'public' ? 'public' : 'all';
-      const shouldSync = mode === 'public' || sync;
+      const shouldSync = true;
 
       try {
-        result = await fetchGroups(accessToken, scope, query, { sync: shouldSync, visibility });
+        result = await fetchGroups(accessToken, scope, normalizedQuery, { sync: shouldSync, visibility });
       } catch {
         accessToken = await refreshSession();
-        result = await fetchGroups(accessToken, scope, query, { sync: shouldSync, visibility });
+        result = await fetchGroups(accessToken, scope, normalizedQuery, { sync: shouldSync, visibility });
+      }
+
+      if (!shouldApply()) {
+        return;
       }
 
       if (mode === 'public') {
@@ -61,50 +107,76 @@ export function DashboardPage() {
       }
 
       if (mode === 'joined') {
-        const cachedPoolIds = readJoinedPoolIdCache(viewerAddress || address);
+        const cacheViewerKey = viewerAddress || address;
+        const cachedPoolIds = readJoinedPoolIdCache(cacheViewerKey);
+
         if (cachedPoolIds.length > 0) {
           const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
-          const quickResult = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
-          if (quickResult.length > 0) {
+          const quickResult = sortDashboardGroups(
+            result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase())),
+          );
+          if (quickResult.length > 0 && shouldApply()) {
             setGroups(previous => (areGroupsEqual(previous, quickResult) ? previous : quickResult));
           }
         }
 
-        const joinedFilter = viewerAddress
-          ? await filterJoinedGroupsWithTimeout(
+        if (!viewerAddress) {
+          if (cachedPoolIds.length > 0) {
+            const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
+            result = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
+          } else {
+            result = [];
+          }
+        } else {
+          const joinedFilter = await filterJoinedGroupsWithTimeout(
             publicClient,
             result,
             viewerAddress,
             JOINED_FILTER_TIMEOUT_MS,
-          )
-          : { timedOut: true, groups: [] as ApiGroup[] };
+          );
 
-        if (!joinedFilter.timedOut) {
-          result = joinedFilter.groups;
-          writeJoinedPoolIdCache(viewerAddress || address, result.map(group => group.poolId));
-        } else if (cachedPoolIds.length > 0) {
-          const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
-          result = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
-        } else {
-          result = [];
+          if (!shouldApply()) {
+            return;
+          }
+
+          if (!joinedFilter.timedOut) {
+            result = joinedFilter.groups;
+            writeJoinedPoolIdCache(cacheViewerKey, result.map(group => group.poolId));
+          } else if (cachedPoolIds.length > 0) {
+            const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
+            result = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
+          } else {
+            result = [];
+          }
         }
       }
 
-      setGroups(previous => (areGroupsEqual(previous, result) ? previous : result));
-      writeDashboardGroupCache(mode, query, result);
+      if (!shouldApply()) {
+        return;
+      }
+
+      const nextGroups = sortDashboardGroups(result);
+      setGroups(previous => (areGroupsEqual(previous, nextGroups) ? previous : nextGroups));
+      writeDashboardGroupCache(mode, query, nextGroups);
     } catch (loadError) {
+      if (!shouldApply()) {
+        return;
+      }
       const message = loadError instanceof Error ? loadError.message : 'Failed to load groups';
       setError(message);
     } finally {
+      if (!shouldApply()) {
+        return;
+      }
       setHasLoadedOnce(true);
-      loadInFlightRef.current = false;
     }
   }, [address, mode, publicClient, query, refreshSession, token, viewerAddress]);
 
   useEffect(() => {
     const cached = readDashboardGroupCache(mode, query);
     if (cached && cached.length > 0) {
-      setGroups(previous => (areGroupsEqual(previous, cached) ? previous : cached));
+      const sortedCached = sortDashboardGroups(cached);
+      setGroups(previous => (areGroupsEqual(previous, sortedCached) ? previous : sortedCached));
     }
   }, [mode, query]);
 
@@ -117,18 +189,27 @@ export function DashboardPage() {
         return;
       }
 
-      await loadGroups(false);
+      if (!isDocumentVisible()) {
+        scheduleNext();
+        return;
+      }
+
+      await loadGroups();
       if (cancelled) {
         return;
       }
 
+      scheduleNext();
+    };
+
+    function scheduleNext() {
       timer = window.setTimeout(
         () => {
           void poll();
         },
         mode === 'joined' ? JOINED_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS,
       );
-    };
+    }
 
     void poll();
 
@@ -140,8 +221,36 @@ export function DashboardPage() {
     };
   }, [loadGroups, mode]);
 
-  const activeCount = useMemo(() => groups.filter(group => group.status === 1).length, [groups]);
-  const formingCount = useMemo(() => groups.filter(group => group.status === 0).length, [groups]);
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const refreshOnVisible = () => {
+      if (!isDocumentVisible()) {
+        return;
+      }
+      void loadGroups();
+    };
+
+    window.addEventListener('focus', refreshOnVisible);
+    document.addEventListener('visibilitychange', refreshOnVisible);
+
+    return () => {
+      window.removeEventListener('focus', refreshOnVisible);
+      document.removeEventListener('visibilitychange', refreshOnVisible);
+    };
+  }, [loadGroups]);
+
+  const lifecycleStatuses = useMemo(() => groups.map(deriveDashboardGroupStatus), [groups]);
+  const activeCount = useMemo(
+    () => lifecycleStatuses.filter(status => status !== 'forming' && status !== 'archived').length,
+    [lifecycleStatuses],
+  );
+  const formingCount = useMemo(
+    () => lifecycleStatuses.filter(status => status === 'forming').length,
+    [lifecycleStatuses],
+  );
   const totalContributed = useMemo(() => {
     try {
       const sum = groups.reduce((acc, item) => acc + BigInt(item.contributionAmount), 0n);
@@ -204,7 +313,7 @@ export function DashboardPage() {
         <button
           type="button"
           onClick={() => {
-            void loadGroups(true);
+            void loadGroups();
           }}
           className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600"
         >

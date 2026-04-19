@@ -52,6 +52,7 @@ export function CreateGroupPage() {
   const [reviewDialogError, setReviewDialogError] = useState('');
   const [isPreparingReviewSession, setIsPreparingReviewSession] = useState(false);
   const reviewWsRef = useRef<WebSocket | null>(null);
+  const hasAutoNavigatedAfterSuccessRef = useRef(false);
 
   const amountPerPeriod = Number(form.amountPerPeriod || '0');
   const members = Number(form.targetMembers || '0');
@@ -185,8 +186,21 @@ export function CreateGroupPage() {
     setReviewWsStatus('idle');
     setReviewDialogError('');
     setIsPreparingReviewSession(false);
+    hasAutoNavigatedAfterSuccessRef.current = false;
     reviewWsRef.current?.close();
     reviewWsRef.current = null;
+  }, []);
+
+  const extractWsErrorText = useCallback((payload: QrSessionWsEvent): string => {
+    const source = payload as Record<string, unknown>;
+    const keys = ['error', 'errorMessage', 'reason', 'message', 'detail', 'details'];
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return '';
   }, []);
 
   const startCreatePoolSession = useCallback(async () => {
@@ -203,6 +217,7 @@ export function CreateGroupPage() {
     setReviewDialogError('');
     setReviewWsStatus('idle');
     setReviewSession(null);
+    hasAutoNavigatedAfterSuccessRef.current = false;
 
     reviewWsRef.current?.close();
     reviewWsRef.current = null;
@@ -222,24 +237,34 @@ export function CreateGroupPage() {
           }
 
           setReviewWsStatus(nextStatus);
+          const wsError = extractWsErrorText(payload);
           if (nextStatus === 'create_pool_failed') {
-            setReviewDialogError('Create-pool failed on mobile app. Check native app error details and refresh QR to retry.');
+            setReviewDialogError(
+              wsError
+                || 'Create-pool failed on mobile app. Check native app error details and refresh QR to retry.',
+            );
           }
         },
         state => {
           setReviewWsStatus(current => (state === 'closed' && current === 'create_pool_success' ? current : state));
+          if (state === 'message_error') {
+            setReviewDialogError('Received invalid websocket payload.');
+          } else if (state === 'error') {
+            setReviewDialogError('Websocket error. Please refresh QR and retry.');
+          }
         },
       );
 
       reviewWsRef.current = ws;
     } catch (error) {
-      setReviewDialogError(error instanceof Error ? error.message : 'Unable to create signing session');
+      const message = error instanceof Error ? error.message : 'Unable to create signing session';
+      setReviewDialogError(message);
       setReviewSession(null);
       setReviewWsStatus('error');
     } finally {
       setIsPreparingReviewSession(false);
     }
-  }, [creatorEVMAddress, reviewInput]);
+  }, [creatorEVMAddress, extractWsErrorText, reviewInput]);
 
   useEffect(() => {
     if (!showScanDialog) {
@@ -255,6 +280,16 @@ export function CreateGroupPage() {
       reviewWsRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!showScanDialog || !isCreatePoolSuccess || hasAutoNavigatedAfterSuccessRef.current) {
+      return;
+    }
+
+    hasAutoNavigatedAfterSuccessRef.current = true;
+    closeReviewDialog();
+    void navigate({ to: '/dashboard' });
+  }, [closeReviewDialog, isCreatePoolSuccess, navigate, showScanDialog]);
 
   const onReview = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -317,8 +352,6 @@ export function CreateGroupPage() {
 
       <CreateGroupReviewDialog
         open={showScanDialog}
-        reviewInput={reviewInput}
-        reviewSessionId={reviewSession?.sessionId ?? ''}
         reviewWsStatus={reviewWsStatus}
         reviewStatusMessage={reviewStatusMessage}
         isPreparingReviewSession={isPreparingReviewSession}

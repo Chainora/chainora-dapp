@@ -23,6 +23,10 @@ export type NotificationReadAllResponse = {
   updatedCount: number;
 };
 
+export type NotificationClearAllResponse = {
+  deletedCount: number;
+};
+
 type Envelope<T> = T | { success?: boolean; data?: T };
 
 const normalizeEnvelope = <T,>(raw: Envelope<T>): T => {
@@ -124,5 +128,22 @@ export const markAllNotificationsAsRead = async (accessToken: string): Promise<N
   const data = normalizeEnvelope(raw);
   return {
     updatedCount: Number(data?.updatedCount ?? 0),
+  };
+};
+
+export const clearAllNotifications = async (accessToken: string): Promise<NotificationClearAllResponse> => {
+  const response = await fetch(
+    `${chainoraApiBase}/v1/notifications`,
+    withAccessToken(accessToken, { method: 'DELETE' }),
+  );
+
+  if (!response.ok) {
+    throw new Error(`Clear notifications failed: ${response.status}`);
+  }
+
+  const raw = (await response.json()) as Envelope<NotificationClearAllResponse>;
+  const data = normalizeEnvelope(raw);
+  return {
+    deletedCount: Number(data?.deletedCount ?? 0),
   };
 };

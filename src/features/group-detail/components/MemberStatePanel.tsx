@@ -8,16 +8,18 @@ export type MemberPhaseView = {
   state: string;
   badge: string;
   isCurrentUser: boolean;
+  bidAmountRaw?: string | null;
+  bidAmountLabel?: string | null;
 };
 
 const toneByState = (state: string): 'success' | 'warning' | 'info' | 'muted' => {
-  if (['paid', 'best_bidder', 'recipient_claimed', 'completed'].includes(state)) {
+  if (['paid', 'best_bidder', 'recipient_claimed', 'completed', 'vote_continue'].includes(state)) {
     return 'success';
   }
-  if (['unpaid', 'recipient_pending', 'pending_finalize'].includes(state)) {
+  if (['unpaid', 'recipient_pending', 'pending_finalize', 'vote_end'].includes(state)) {
     return 'warning';
   }
-  if (['eligible', 'waiting_turn'].includes(state)) {
+  if (['eligible', 'waiting_turn', 'vote_pending'].includes(state)) {
     return 'info';
   }
   return 'muted';

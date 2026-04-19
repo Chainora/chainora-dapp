@@ -25,6 +25,7 @@ export type ApiGroup = {
     | 'funding'
     | 'bidding'
     | 'payout'
+    | 'deadlinepassed'
     | 'ended_period'
     | 'voting_extension'
     | 'archived';

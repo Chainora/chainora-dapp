@@ -1,6 +1,6 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAddress, isAddress, type Address } from 'viem';
+import { getAddress, isAddress, parseAbiItem, type Address } from 'viem';
 import { usePublicClient } from 'wagmi';
 
 import { fromInitAddress, toInitAddress } from '../../../components/UserDetail';
@@ -8,10 +8,12 @@ import type { MembershipVoteMode } from '../../../components/group-detail/types'
 import { useAuth } from '../../../context/AuthContext';
 import {
   fetchBasicProfilesByAddresses,
+  fetchBasicProfilesByUsernames,
   type BasicProfile,
 } from '../../../services/profileService';
 import {
   type ApiGroup,
+  type ApiGroupViewPeriodMeta,
 } from '../../../services/groupsService';
 import { formatInitCompact, formatToken, parseUintInput, toUsernameLabel } from '../utils';
 import {
@@ -28,8 +30,26 @@ import { type PoolActionIntent, usePoolActionQr } from './usePoolActionQr';
 import { useGroupMembershipProposals } from './useGroupMembershipProposals';
 import type { MemberPhaseView } from '../components/MemberStatePanel';
 
+const CHAINORA_BID_SUBMITTED_EVENT = parseAbiItem(
+  'event ChainoraBidSubmitted(uint256 indexed cycleId, uint256 indexed periodId, address indexed bidder, uint256 discount)',
+);
+const CHAINORA_PERIOD_FINALIZED_EVENT = parseAbiItem(
+  'event ChainoraPeriodFinalized(uint256 indexed cycleId, uint256 indexed periodId)',
+);
+const CHAINORA_EXTEND_VOTED_EVENT = parseAbiItem(
+  'event ChainoraExtendVoted(address indexed voter, bool support, uint256 yesVotes, uint256 requiredVotes)',
+);
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
 type GroupDetailProps = {
   poolId: string;
+};
+
+const isDocumentVisible = (): boolean => {
+  if (typeof document === 'undefined') {
+    return true;
+  }
+  return document.visibilityState === 'visible';
 };
 
 const parseViewerAddress = (raw: string): Address | null => {
@@ -48,6 +68,47 @@ const parseViewerAddress = (raw: string): Address | null => {
 };
 
 const buildMemberKey = (addresses: string[]): string => addresses.map(item => item.toLowerCase()).join(',');
+
+const normalizeCandidateUsername = (value: string): string => {
+  let normalized = value.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized.startsWith('@')) {
+    normalized = normalized.slice(1).trim();
+  }
+
+  normalized = normalized.toLowerCase();
+  if (normalized.endsWith('.init')) {
+    normalized = normalized.slice(0, -5).trim();
+  }
+
+  return normalized;
+};
+
+const derivePayoutAmount = (periodMeta: ApiGroupViewPeriodMeta | undefined): string => {
+  if (!periodMeta) {
+    return '0';
+  }
+
+  const parseOrZero = (value: string): bigint => {
+    try {
+      return BigInt(value);
+    } catch {
+      return 0n;
+    }
+  };
+
+  const payoutTarget = parseOrZero(periodMeta.totalContributed);
+  const highestBidAmount = parseOrZero(periodMeta.bestDiscount);
+  if (payoutTarget > 0n) {
+    const payoutAmount = payoutTarget - highestBidAmount;
+    return (payoutAmount > 0n ? payoutAmount : 0n).toString();
+  }
+
+  return periodMeta.payoutAmount;
+};
 
 export function useGroupDetail({ poolId }: GroupDetailProps) {
   const queryClient = useQueryClient();
@@ -73,7 +134,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   const overview = overviewQuery.data;
   const overviewActivePeriod = getCurrentPeriod(overview);
   const overviewActivePhase = deriveActivePhase(overview);
-  const activeSelectionHint = false;
+  const activeSelectionHint = true;
 
   const viewQuery = useGroupPhaseViewQuery({
     poolId,
@@ -143,28 +204,6 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     return map;
   }, [avatarUrl, memberProfilesQuery.data, username, viewerAddress]);
 
-  const memberPhaseViews = useMemo<MemberPhaseView[]>(() => {
-    const states = phaseView?.memberStates ?? [];
-    return states.map(member => {
-      const normalizedAddress = member.address.trim().toLowerCase();
-      const profile = profileMap.get(normalizedAddress);
-      const initAddress = toInitAddress(member.address) || member.address;
-      const displayLabel = profile?.username
-        ? toUsernameLabel(profile.username)
-        : formatInitCompact(initAddress);
-
-      return {
-        address: member.address,
-        displayLabel,
-        secondaryLabel: initAddress,
-        avatarUrl: profile?.avatarUrl || '',
-        state: member.state,
-        badge: member.badge,
-        isCurrentUser: Boolean(member.isCurrentUser),
-      };
-    });
-  }, [phaseView?.memberStates, profileMap]);
-
   const isViewerMember = useMemo(
     () => (phaseView?.memberStates ?? []).some(member => member.isCurrentUser),
     [phaseView?.memberStates],
@@ -197,6 +236,183 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     }
     return getAddress(raw);
   }, [group?.poolAddress]);
+
+  const selectedCycleForBids = useMemo(() => {
+    if (phaseView?.selection.cycle && phaseView.selection.cycle > 0) {
+      return phaseView.selection.cycle;
+    }
+    try {
+      const parsed = Number(group?.currentCycle ?? '1');
+      return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+    } catch {
+      return 1;
+    }
+  }, [group?.currentCycle, phaseView?.selection.cycle]);
+
+  const selectedPeriodForBids = useMemo(() => {
+    if (phaseView?.selection.period && phaseView.selection.period > 0) {
+      return phaseView.selection.period;
+    }
+    return activePeriod > 0 ? activePeriod : 1;
+  }, [activePeriod, phaseView?.selection.period]);
+
+  const selectedPhaseForBids = phaseView?.selection.phase ?? activePhase;
+
+  const memberBidsQuery = useQuery({
+    queryKey: ['group-member-bids', poolId, poolAddress?.toLowerCase() ?? '', selectedCycleForBids, selectedPeriodForBids],
+    enabled:
+      Boolean(publicClient)
+      && Boolean(poolAddress)
+      && selectedPhaseForBids === 'bidding'
+      && selectedCycleForBids > 0
+      && selectedPeriodForBids > 0,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+    queryFn: async (): Promise<Record<string, string>> => {
+      if (!publicClient || !poolAddress) {
+        return {};
+      }
+
+      const cycleId = BigInt(selectedCycleForBids);
+      const periodId = BigInt(selectedPeriodForBids);
+      const logs = await publicClient.getLogs({
+        address: poolAddress,
+        event: CHAINORA_BID_SUBMITTED_EVENT,
+        args: { cycleId, periodId },
+      });
+
+      const bids: Record<string, string> = {};
+      for (const log of logs) {
+        const bidder = log.args.bidder;
+        const discount = log.args.discount;
+        if (typeof bidder !== 'string' || typeof discount !== 'bigint') {
+          continue;
+        }
+        bids[bidder.toLowerCase()] = discount.toString();
+      }
+      return bids;
+    },
+  });
+
+  const extensionVotesQuery = useQuery({
+    queryKey: [
+      'group-extension-votes',
+      poolId,
+      poolAddress?.toLowerCase() ?? '',
+      selectedCycleForBids,
+      selectedPeriodForBids,
+    ],
+    enabled:
+      Boolean(publicClient)
+      && Boolean(poolAddress)
+      && groupStatus === 'voting_extension'
+      && selectedPhaseForBids === 'ending'
+      && selectedCycleForBids > 0
+      && selectedPeriodForBids > 0,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+    queryFn: async (): Promise<Record<string, 'continue' | 'end'>> => {
+      if (!publicClient || !poolAddress) {
+        return {};
+      }
+
+      const cycleId = BigInt(selectedCycleForBids);
+      const periodId = BigInt(selectedPeriodForBids);
+      const periodFinalizedLogs = await publicClient.getLogs({
+        address: poolAddress,
+        event: CHAINORA_PERIOD_FINALIZED_EVENT,
+        args: { cycleId, periodId },
+      });
+      const fromBlock = periodFinalizedLogs[periodFinalizedLogs.length - 1]?.blockNumber;
+      if (typeof fromBlock !== 'bigint') {
+        return {};
+      }
+
+      const extendVoteLogs = await publicClient.getLogs({
+        address: poolAddress,
+        event: CHAINORA_EXTEND_VOTED_EVENT,
+        fromBlock,
+        toBlock: 'latest',
+      });
+
+      const votes: Record<string, 'continue' | 'end'> = {};
+      for (const log of extendVoteLogs) {
+        const voter = log.args.voter;
+        const support = log.args.support;
+        if (typeof voter !== 'string' || typeof support !== 'boolean') {
+          continue;
+        }
+        votes[voter.toLowerCase()] = support ? 'continue' : 'end';
+      }
+      return votes;
+    },
+  });
+
+  const memberPhaseViews = useMemo<MemberPhaseView[]>(() => {
+    const states = phaseView?.memberStates ?? [];
+    const memberBids = memberBidsQuery.data ?? {};
+    const extensionVotes = extensionVotesQuery.data ?? {};
+    const recipientLower = phaseView?.periodMeta.recipient?.trim().toLowerCase() ?? '';
+    const hasRecipient = Boolean(recipientLower) && recipientLower !== ZERO_ADDRESS;
+
+    return states.map(member => {
+      const normalizedAddress = member.address.trim().toLowerCase();
+      const profile = profileMap.get(normalizedAddress);
+      const initAddress = toInitAddress(member.address) || member.address;
+      const displayLabel = profile?.username
+        ? toUsernameLabel(profile.username)
+        : formatInitCompact(initAddress);
+      const bidAmountRaw = selectedPhaseForBids === 'bidding'
+        ? memberBids[normalizedAddress] ?? null
+        : null;
+      let state = member.state;
+      let badge = member.badge;
+      if (groupStatus === 'voting_extension' && selectedPhaseForBids === 'ending') {
+        const memberVote = extensionVotes[normalizedAddress];
+        if (memberVote === 'continue') {
+          state = 'vote_continue';
+          badge = 'Vote: Continue';
+        } else if (memberVote === 'end') {
+          state = 'vote_end';
+          badge = 'Vote: End';
+        } else {
+          state = 'vote_pending';
+          badge = 'No vote yet';
+        }
+      } else if (selectedPhaseForBids === 'ending' && member.state === 'pending_finalize') {
+        if (hasRecipient && normalizedAddress === recipientLower) {
+          badge = `Claimer period ${selectedPeriodForBids}`;
+        } else {
+          badge = '';
+        }
+      }
+
+      return {
+        address: member.address,
+        displayLabel,
+        secondaryLabel: initAddress,
+        avatarUrl: profile?.avatarUrl || '',
+        state,
+        badge,
+        isCurrentUser: Boolean(member.isCurrentUser),
+        bidAmountRaw,
+        bidAmountLabel: bidAmountRaw ? formatToken(bidAmountRaw) : null,
+      };
+    });
+  }, [
+    memberBidsQuery.data,
+    extensionVotesQuery.data,
+    phaseView?.memberStates,
+    phaseView?.periodMeta.recipient,
+    groupStatus,
+    profileMap,
+    selectedPeriodForBids,
+    selectedPhaseForBids,
+  ]);
 
   const canProposeInvite = groupStatus === 'forming' && isViewerActiveMember;
   const [candidateAddress, setCandidateAddressState] = useState('');
@@ -280,10 +496,27 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   const [bidDiscountInput, setBidDiscountInputState] = useState('');
 
   const contributionLabel = useMemo(() => formatToken(group?.contributionAmount ?? '0'), [group?.contributionAmount]);
+  const payoutAmountRaw = useMemo(
+    () => derivePayoutAmount(phaseView?.periodMeta),
+    [phaseView?.periodMeta],
+  );
+  const periodMeta = useMemo(() => {
+    if (!phaseView?.periodMeta) {
+      return undefined;
+    }
+    return {
+      ...phaseView.periodMeta,
+      payoutAmount: payoutAmountRaw,
+    };
+  }, [phaseView?.periodMeta, payoutAmountRaw]);
 
   const totalPayoutLabel = useMemo(() => {
-    if (phaseView?.periodMeta.payoutAmount) {
-      return formatToken(phaseView.periodMeta.payoutAmount);
+    try {
+      if (BigInt(payoutAmountRaw) > 0n) {
+        return formatToken(payoutAmountRaw);
+      }
+    } catch {
+      // Ignore parse errors and fall back to contribution-based estimate.
     }
 
     try {
@@ -293,7 +526,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     } catch {
       return formatToken('0');
     }
-  }, [group?.activeMemberCount, group?.contributionAmount, phaseView?.periodMeta.payoutAmount]);
+  }, [group?.activeMemberCount, group?.contributionAmount, payoutAmountRaw]);
 
   const claimableYieldLabel = useMemo(
     () => formatToken(phaseView?.userClaimState.claimableYield ?? '0'),
@@ -321,10 +554,22 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     ) ?? null,
     [inviteProposals, viewerLower],
   );
-  const canRequestJoin = permissionView.canRequestJoin && !viewerOpenJoinRequest;
+  const viewerOpenInvite = useMemo(
+    () => inviteProposals.find(
+      proposal =>
+        proposal.voteMode === 'invite'
+        && proposal.open
+        && Boolean(viewerLower)
+        && proposal.candidate.toLowerCase() === viewerLower,
+    ) ?? null,
+    [inviteProposals, viewerLower],
+  );
+  const canRequestJoin = permissionView.canRequestJoin && !viewerOpenJoinRequest && !viewerOpenInvite;
   const requestJoinDisabledReason = viewerOpenJoinRequest
     ? `You already submitted join request #${viewerOpenJoinRequest.proposalId}. Wait for member votes before retrying.`
-    : permissionView.disabledReason;
+    : viewerOpenInvite
+      ? `You already have an active invite #${viewerOpenInvite.proposalId}. Confirm it in Forming workspace instead of creating a join request.`
+      : permissionView.disabledReason;
   const canConfirmJoin = !isViewerMember && Boolean(viewerReadyMembershipProposal);
   const confirmJoinLabel = viewerReadyMembershipProposal
     ? viewerReadyMembershipProposal.voteMode === 'invite'
@@ -340,6 +585,32 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     try {
       setInputError('');
       const discount = parseUintInput(bidDiscountInput, 'Bid discount');
+      const currentBestDiscount = (() => {
+        try {
+          return BigInt(phaseView?.periodMeta.bestDiscount ?? '0');
+        } catch {
+          return 0n;
+        }
+      })();
+      if (discount <= currentBestDiscount) {
+        throw new Error(
+          `Bid discount must be greater than current best discount (${currentBestDiscount.toString()}).`,
+        );
+      }
+
+      const totalContributed = (() => {
+        try {
+          return BigInt(phaseView?.periodMeta.totalContributed ?? '0');
+        } catch {
+          return 0n;
+        }
+      })();
+      if (totalContributed > 0n && discount >= totalContributed) {
+        throw new Error(
+          `Bid discount must be lower than total contributed (${totalContributed.toString()}).`,
+        );
+      }
+
       triggerAction({
         actionKey: 'submit_discount_bid',
         label: 'submit discount bid',
@@ -350,7 +621,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       const message = error instanceof Error ? error.message : 'Bid discount is invalid.';
       setInputError(message);
     }
-  }, [bidDiscountInput, triggerAction]);
+  }, [bidDiscountInput, phaseView?.periodMeta.bestDiscount, phaseView?.periodMeta.totalContributed, triggerAction]);
 
   const onCloseAuction = useCallback(() => {
     triggerAction({
@@ -408,25 +679,75 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       return;
     }
 
-    const trimmed = candidate.trim();
-    const resolvedCandidate = isAddress(trimmed) ? getAddress(trimmed) : fromInitAddress(trimmed);
-    if (!resolvedCandidate) {
-      setInputError('Candidate address is invalid.');
-      return;
-    }
-    if (viewerAddress && resolvedCandidate.toLowerCase() === viewerAddress.toLowerCase()) {
-      setInputError('You cannot invite your own wallet.');
-      return;
-    }
+    void (async () => {
+      const trimmed = candidate.trim();
+      if (!trimmed) {
+        setInputError('Candidate is required.');
+        return;
+      }
 
-    triggerAction({
-      actionKey: 'propose_invite',
-      label: 'propose invite',
-      functionName: 'proposeInvite',
-      args: [resolvedCandidate],
-    });
-    setCandidateAddressState('');
-  }, [canProposeInvite, triggerAction, viewerAddress]);
+      let resolvedCandidate: Address | null = null;
+      if (isAddress(trimmed)) {
+        resolvedCandidate = getAddress(trimmed);
+      } else {
+        const initResolved = fromInitAddress(trimmed);
+        if (initResolved && isAddress(initResolved)) {
+          resolvedCandidate = getAddress(initResolved);
+        }
+      }
+
+      if (!resolvedCandidate) {
+        const normalizedUsername = normalizeCandidateUsername(trimmed);
+        if (!normalizedUsername) {
+          setInputError('Candidate must be a wallet, init address, or username.');
+          return;
+        }
+
+        if (!token) {
+          setInputError('Missing auth token. Please reconnect and try again.');
+          return;
+        }
+
+        let profiles: BasicProfile[] = [];
+        try {
+          profiles = await fetchBasicProfilesByUsernames(token, [normalizedUsername]);
+        } catch {
+          try {
+            const nextToken = await refreshSession();
+            profiles = await fetchBasicProfilesByUsernames(nextToken, [normalizedUsername]);
+          } catch {
+            setInputError('Cannot resolve username right now. Please try again.');
+            return;
+          }
+        }
+
+        const matchedProfile = profiles.find(profile => {
+          const profileUsername = normalizeCandidateUsername(profile.username);
+          return profileUsername === normalizedUsername;
+        }) ?? profiles[0];
+
+        const resolvedAddress = matchedProfile?.address?.trim() ?? '';
+        if (!matchedProfile || !resolvedAddress || !isAddress(resolvedAddress)) {
+          setInputError('Username not found or has no linked wallet.');
+          return;
+        }
+        resolvedCandidate = getAddress(resolvedAddress);
+      }
+
+      if (viewerAddress && resolvedCandidate.toLowerCase() === viewerAddress.toLowerCase()) {
+        setInputError('You cannot invite your own wallet.');
+        return;
+      }
+
+      triggerAction({
+        actionKey: 'propose_invite',
+        label: 'propose invite',
+        functionName: 'proposeInvite',
+        args: [resolvedCandidate],
+      });
+      setCandidateAddressState('');
+    })();
+  }, [canProposeInvite, refreshSession, token, triggerAction, viewerAddress]);
 
   const onVoteProposal = useCallback((proposalId: string, voteMode: MembershipVoteMode, support: boolean) => {
     triggerAction(
@@ -523,7 +844,49 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     void overviewQuery.refetch();
     void viewQuery.refetch();
     void membershipProposalsQuery.refetch();
-  }, [membershipProposalsQuery, overviewQuery, viewQuery]);
+  }, [membershipProposalsQuery.refetch, overviewQuery.refetch, viewQuery.refetch]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) {
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      if (!isDocumentVisible()) {
+        return;
+      }
+      onRefresh();
+    }, 10_000);
+
+    return () => window.clearInterval(timer);
+  }, [isAuthenticated, onRefresh, token]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) {
+      return undefined;
+    }
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const refreshWhenVisible = () => {
+      if (!isDocumentVisible()) {
+        return;
+      }
+      onRefresh();
+    };
+
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+
+    return () => {
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [isAuthenticated, onRefresh, token]);
 
   const selection = phaseView?.selection;
 
@@ -538,7 +901,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     activePeriod,
     activePhase,
     selection,
-    periodMeta: phaseView?.periodMeta,
+    periodMeta,
     phaseMeta: phaseView?.phaseMeta,
     memberStates: phaseView?.memberStates ?? [],
     memberPhaseViews,

@@ -10,6 +10,7 @@ import {
 
 import { useAuth } from '../../context/AuthContext';
 import {
+  clearAllNotifications,
   fetchNotifications,
   fetchUnreadNotificationCount,
   markAllNotificationsAsRead,
@@ -38,7 +39,10 @@ export function NotificationBell() {
     logout,
   } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
-  const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerWrapRef = useRef<HTMLDivElement | null>(null);
+  const triggerButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [floatingPanelNode, setFloatingPanelNode] = useState<HTMLDivElement | null>(null);
+  const [panelAnchorRect, setPanelAnchorRect] = useState<DOMRect | null>(null);
   const tokenRef = useRef(token);
   const refreshSessionRef = useRef(refreshSession);
   const logoutRef = useRef(logout);
@@ -53,6 +57,11 @@ export function NotificationBell() {
     () => ['notifications', 'list', viewerAddress] as const,
     [viewerAddress],
   );
+
+  const updatePanelAnchor = useCallback(() => {
+    const triggerRect = triggerButtonRef.current?.getBoundingClientRect() ?? null;
+    setPanelAnchorRect(triggerRect);
+  }, []);
 
   useEffect(() => {
     tokenRef.current = token;
@@ -167,6 +176,20 @@ export function NotificationBell() {
     },
   });
 
+  const clearAllMutation = useMutation({
+    mutationFn: async () => withTokenRefresh(nextToken => clearAllNotifications(nextToken)),
+    onSuccess: () => {
+      queryClient.setQueryData<InfiniteData<NotificationListResponse, string>>(
+        notificationListKey,
+        {
+          pages: [{ items: [], nextCursor: '' }],
+          pageParams: [''],
+        },
+      );
+      queryClient.setQueryData<number>(notificationUnreadCountKey, 0);
+    },
+  });
+
   useEffect(() => {
     if (!isAuthenticated) {
       previousUnreadCountRef.current = null;
@@ -201,12 +224,18 @@ export function NotificationBell() {
       return;
     }
 
+    updatePanelAnchor();
+    const onViewportChange = () => {
+      updatePanelAnchor();
+    };
     const onPointerDown = (event: MouseEvent) => {
-      if (!panelRef.current) {
+      const target = event.target as Node | null;
+      if (!target) {
         return;
       }
-
-      if (!panelRef.current.contains(event.target as Node)) {
+      const insideTrigger = Boolean(triggerWrapRef.current?.contains(target));
+      const insidePanel = Boolean(floatingPanelNode?.contains(target));
+      if (!insideTrigger && !insidePanel) {
         setIsOpen(false);
       }
     };
@@ -218,11 +247,15 @@ export function NotificationBell() {
 
     window.addEventListener('mousedown', onPointerDown);
     window.addEventListener('keydown', onEscape);
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
     return () => {
       window.removeEventListener('mousedown', onPointerDown);
       window.removeEventListener('keydown', onEscape);
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onViewportChange, true);
     };
-  }, [isOpen]);
+  }, [floatingPanelNode, isOpen, updatePanelAnchor]);
 
   const unreadCount = Number(unreadCountQuery.data ?? 0);
   const notifications = useMemo(() => (
@@ -242,8 +275,17 @@ export function NotificationBell() {
     if (markAllReadMutation.error instanceof Error) {
       return markAllReadMutation.error.message;
     }
+    if (clearAllMutation.error instanceof Error) {
+      return clearAllMutation.error.message;
+    }
     return '';
-  }, [markAllReadMutation.error, markReadMutation.error, notificationsQuery.error, unreadCountQuery.error]);
+  }, [
+    clearAllMutation.error,
+    markAllReadMutation.error,
+    markReadMutation.error,
+    notificationsQuery.error,
+    unreadCountQuery.error,
+  ]);
 
   const unreadBadge = useMemo(() => {
     if (unreadCount <= 0) {
@@ -263,8 +305,9 @@ export function NotificationBell() {
   }
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative" ref={triggerWrapRef}>
       <button
+        ref={triggerButtonRef}
         type="button"
         onClick={() => {
           setIsOpen(previous => !previous);
@@ -291,8 +334,14 @@ export function NotificationBell() {
         hasNextPage={Boolean(notificationsQuery.hasNextPage)}
         isFetchingNextPage={notificationsQuery.isFetchingNextPage}
         isMarkAllPending={markAllReadMutation.isPending}
+        isClearAllPending={clearAllMutation.isPending}
+        anchorRect={panelAnchorRect}
+        onPanelMount={setFloatingPanelNode}
         onMarkAllRead={() => {
           void markAllReadMutation.mutateAsync();
+        }}
+        onClearAll={() => {
+          void clearAllMutation.mutateAsync();
         }}
         onNotificationClick={notification => {
           void (async () => {

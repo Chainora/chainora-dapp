@@ -3,6 +3,7 @@ import type {
   ApiGroupViewPeriodMeta,
   ApiGroupViewPhaseMeta,
 } from '../../../services/groupsService';
+import { formatToken } from '../utils';
 import { PhaseCountdown } from './PhaseCountdown';
 import { StatusBadge } from './StatusBadge';
 
@@ -43,7 +44,7 @@ export function PayoutPhasePanel({
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Payout recipient</p>
           <p className="mt-1 text-sm font-semibold text-slate-900">{recipient?.address || periodMeta.recipient || 'Not selected'}</p>
-          <p className="mt-2 text-sm text-slate-700">Payout amount: {periodMeta.payoutAmount}</p>
+          <p className="mt-2 text-sm text-slate-700">Payout amount: {formatToken(periodMeta.payoutAmount)}</p>
           <p className="text-sm text-slate-700">Claimable yield: {claimableYieldLabel}</p>
           <div className="mt-2">
             <StatusBadge label={isClaimed ? 'Payout claimed' : 'Payout pending'} tone={isClaimed ? 'success' : 'warning'} />

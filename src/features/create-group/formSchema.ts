@@ -40,7 +40,12 @@ export const createGroupSchema = z
         const parsed = Number(value);
         return Number.isFinite(parsed) && parsed > 0;
       }, 'Amount per period must be greater than 0.'),
-    targetMembers: z.coerce.number().int().min(2).max(255),
+    targetMembers: z
+      .coerce
+      .number()
+      .int()
+      .min(3, 'Group must have at least 3 members.')
+      .max(255),
     periodDuration: durationSchema,
     auctionWindow: durationSchema,
     contributionWindow: durationSchema,

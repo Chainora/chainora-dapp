@@ -149,3 +149,49 @@ export const fetchBasicProfilesByAddresses = async (
     avatarUrl: String(item.avatarUrl ?? '').trim(),
   }));
 };
+
+export const fetchBasicProfilesByUsernames = async (
+  accessToken: string,
+  usernames: string[],
+): Promise<BasicProfile[]> => {
+  const normalized = Array.from(
+    new Set(
+      usernames
+        .map(item => item.trim().toLowerCase())
+        .map(item => item.startsWith('@') ? item.slice(1).trim() : item)
+        .map(item => item.endsWith('.init') ? item.slice(0, -5).trim() : item)
+        .filter(item => item !== ''),
+    ),
+  );
+
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  const params = new URLSearchParams();
+  params.set('usernames', normalized.join(','));
+
+  const response = await fetch(`${chainoraApiBase}/v1/auth/profiles?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Load member profiles failed: ${response.status}`);
+  }
+
+  const raw = (await response.json()) as Envelope<BasicProfile[]>;
+  const payload = normalizeEnvelope(raw);
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload.map(item => ({
+    address: String(item.address ?? '').trim(),
+    username: String(item.username ?? '').trim(),
+    avatarUrl: String(item.avatarUrl ?? '').trim(),
+  }));
+};
