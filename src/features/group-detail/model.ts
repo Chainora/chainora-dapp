@@ -4,7 +4,7 @@ import type {
   ApiGroupViewSelection,
   GroupPhase,
 } from '../../services/groupsService';
-import { deriveGroupStatus, type GroupStatus } from '../../services/groupStatus';
+import { deriveGroupStatus, readBackendGroupStatus, type GroupStatus } from '../../services/groupStatus';
 
 export type TimelineStepState = 'completed' | 'active' | 'locked';
 
@@ -85,6 +85,11 @@ export const deriveActivePhase = (group: ApiGroup | null | undefined): GroupPhas
 export const deriveLifecycleStatus = (group: ApiGroup | null | undefined): GroupStatus => {
   if (!group) {
     return 'forming';
+  }
+
+  const backendStatus = readBackendGroupStatus(group);
+  if (backendStatus) {
+    return backendStatus;
   }
 
   return deriveGroupStatus({

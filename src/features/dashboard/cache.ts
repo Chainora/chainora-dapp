@@ -11,7 +11,15 @@ export const buildDashboardGroupCacheKey = (mode: DashboardMode, query: string):
 export const buildJoinedPoolCacheKey = (viewerAddress: string): string =>
   `${DASHBOARD_JOINED_POOL_CACHE_KEY_PREFIX}:${viewerAddress.trim().toLowerCase()}`;
 
-export const readDashboardGroupCache = (mode: DashboardMode, query: string): ApiGroup[] | null => {
+export type DashboardGroupCacheEntry = {
+  cachedAt: number;
+  groups: ApiGroup[];
+};
+
+export const readDashboardGroupCacheEntry = (
+  mode: DashboardMode,
+  query: string,
+): DashboardGroupCacheEntry | null => {
   if (typeof window === 'undefined') {
     return null;
   }
@@ -25,10 +33,28 @@ export const readDashboardGroupCache = (mode: DashboardMode, query: string): Api
     if (!Array.isArray(parsed.groups)) {
       return null;
     }
-    return parsed.groups;
+
+    const parsedWithMeta = parsed as { groups?: ApiGroup[]; cachedAt?: string | number };
+    let cachedAt = 0;
+    if (typeof parsedWithMeta.cachedAt === 'string') {
+      const parsedCachedAt = Date.parse(parsedWithMeta.cachedAt);
+      cachedAt = Number.isFinite(parsedCachedAt) ? parsedCachedAt : 0;
+    } else if (typeof parsedWithMeta.cachedAt === 'number' && Number.isFinite(parsedWithMeta.cachedAt)) {
+      cachedAt = parsedWithMeta.cachedAt;
+    }
+
+    return {
+      cachedAt,
+      groups: parsed.groups,
+    };
   } catch {
     return null;
   }
+};
+
+export const readDashboardGroupCache = (mode: DashboardMode, query: string): ApiGroup[] | null => {
+  const entry = readDashboardGroupCacheEntry(mode, query);
+  return entry?.groups ?? null;
 };
 
 export const writeDashboardGroupCache = (mode: DashboardMode, query: string, groups: ApiGroup[]): void => {
@@ -49,9 +75,14 @@ export const writeDashboardGroupCache = (mode: DashboardMode, query: string, gro
   }
 };
 
-export const readJoinedPoolIdCache = (viewerAddress: string): string[] => {
+export type JoinedPoolIdCacheEntry = {
+  cachedAt: number;
+  poolIds: string[];
+};
+
+export const readJoinedPoolIdCacheEntry = (viewerAddress: string): JoinedPoolIdCacheEntry | null => {
   if (typeof window === 'undefined') {
-    return [];
+    return null;
   }
 
   const key = buildJoinedPoolCacheKey(viewerAddress);
@@ -59,21 +90,48 @@ export const readJoinedPoolIdCache = (viewerAddress: string): string[] => {
     try {
       const raw = window.localStorage.getItem(key);
       if (!raw) {
-        return [];
+        return {
+          cachedAt: 0,
+          poolIds: [],
+        };
       }
-      const parsed = JSON.parse(raw) as { poolIds?: string[] };
+      const parsed = JSON.parse(raw) as { poolIds?: string[]; cachedAt?: string | number };
       if (!Array.isArray(parsed.poolIds)) {
-        return [];
+        return {
+          cachedAt: 0,
+          poolIds: [],
+        };
       }
-      return parsed.poolIds
+      const poolIds = parsed.poolIds
         .map(item => String(item).trim())
         .filter(Boolean);
+
+      let cachedAt = 0;
+      if (typeof parsed.cachedAt === 'string') {
+        const parsedCachedAt = Date.parse(parsed.cachedAt);
+        cachedAt = Number.isFinite(parsedCachedAt) ? parsedCachedAt : 0;
+      } else if (typeof parsed.cachedAt === 'number' && Number.isFinite(parsed.cachedAt)) {
+        cachedAt = parsed.cachedAt;
+      }
+
+      return {
+        cachedAt,
+        poolIds,
+      };
     } catch {
-      return [];
+      return {
+        cachedAt: 0,
+        poolIds: [],
+      };
     }
   }
 
-  return [];
+  return null;
+};
+
+export const readJoinedPoolIdCache = (viewerAddress: string): string[] => {
+  const entry = readJoinedPoolIdCacheEntry(viewerAddress);
+  return entry?.poolIds ?? [];
 };
 
 export const writeJoinedPoolIdCache = (viewerAddress: string, poolIds: string[]): void => {

@@ -76,7 +76,7 @@ export function PhasePrimaryPanel({
 }) {
   const paidCount = memberStates.filter(member => member.state === 'paid').length;
   const totalMembers = memberStates.length;
-  const bestDiscount = periodMeta?.bestDiscount ?? '0';
+  const bestDiscount = formatToken(periodMeta?.bestDiscount ?? '0');
   const inviteDisabledReason = !isConnected
     ? 'Connect wallet to invite.'
     : !canProposeInvite
@@ -201,6 +201,7 @@ export function PhasePrimaryPanel({
     const canDoPrimary = canPrimaryBid || canPrimaryClose;
     const primaryLabel = canPrimaryBid ? 'Submit Bid' : 'Sync Runtime';
     const onPrimaryClick = canPrimaryBid ? onSubmitBid : onCloseAuction;
+    const isSyncRuntimeState = canPrimaryClose;
 
     return (
       <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
@@ -208,23 +209,29 @@ export function PhasePrimaryPanel({
           <h2 className="text-lg font-bold text-slate-900">Bidding Workspace</h2>
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">Submit your discount bid for this period auction.</p>
+        <p className="mt-2 text-sm text-slate-600">
+          {isSyncRuntimeState
+            ? 'Auction window ended. Sync runtime to move to payout.'
+            : 'Submit your discount bid for this period auction.'}
+        </p>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <label htmlFor="compact-bid-discount" className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-            Discount bid
-          </label>
-          <input
-            id="compact-bid-discount"
-            value={bidDiscountInput}
-            onChange={event => onBidDiscountChange(event.target.value)}
-            inputMode="numeric"
-            placeholder="Enter discount"
-            className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-          />
-          <p className="mt-2 text-xs text-slate-600">Best discount now: {bestDiscount}</p>
-          <p className="text-xs text-slate-500">Your bid must be greater than current best discount.</p>
-        </div>
+        {canPrimaryBid ? (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <label htmlFor="compact-bid-discount" className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+              Discount bid
+            </label>
+            <input
+              id="compact-bid-discount"
+              value={bidDiscountInput}
+              onChange={event => onBidDiscountChange(event.target.value)}
+              inputMode="numeric"
+              placeholder="Enter discount"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+            />
+            <p className="mt-2 text-xs text-slate-600">Best discount now: {bestDiscount}</p>
+            <p className="text-xs text-slate-500">Your bid must be greater than current best discount.</p>
+          </div>
+        ) : null}
 
         <div className="mt-auto space-y-2">
           <button

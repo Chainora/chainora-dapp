@@ -1,4 +1,4 @@
-import { formatUnits } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 
 import type { InviteProposalView } from '../../components/group-detail/types';
 import type { ApiGroup } from '../../services/groupsService';
@@ -170,6 +170,27 @@ export const parseUintInput = (value: string, field: string): bigint => {
     throw new Error(`${field} must be a non-negative integer`);
   }
   return BigInt(trimmed);
+};
+
+export const parseTokenAmountInput = (
+  value: string,
+  field: string,
+  decimals = 18,
+): bigint => {
+  const trimmed = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
+    throw new Error(`${field} must be a non-negative number`);
+  }
+
+  try {
+    const parsed = parseUnits(trimmed, decimals);
+    if (parsed < 0n) {
+      throw new Error(`${field} must be a non-negative number`);
+    }
+    return parsed;
+  } catch {
+    throw new Error(`${field} has invalid decimal precision`);
+  }
 };
 
 export const toInt = (value: unknown): number => {

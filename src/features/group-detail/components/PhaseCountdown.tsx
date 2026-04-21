@@ -46,7 +46,7 @@ export function PhaseCountdown({
   useEffect(() => {
     targetTimestampRef.current = Date.now() + Math.max(0, Math.floor(countdownSeconds)) * 1_000;
     setRemainingSeconds(computeRemainingSeconds());
-  }, [countdownSeconds]);
+  }, [countdownLabel, countdownSeconds, phaseStatus]);
 
   useEffect(() => {
     let timer: number | null = null;

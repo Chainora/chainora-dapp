@@ -1,4 +1,4 @@
-import { type ChangeEvent, useCallback, useEffect, useState } from 'react';
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from '@tanstack/react-router';
 
 import { chainoraApiBase } from '../configs/api';
@@ -16,6 +16,7 @@ type ProfileResponse = {
   address: string;
   username: string;
   avatarUrl: string;
+  reputationScore?: string;
   tCNR: string;
   kycStatus: string;
 };
@@ -95,6 +96,19 @@ export function ProfilePage() {
   const hasUsername = Boolean(normalizeProfileUsername(profile?.username));
   const tcnrSymbol = (import.meta.env.VITE_CHAINORA_CURRENCY_SYMBOL?.trim() || 'tCNR').toUpperCase();
   const isAwaitingCardScan = relayerWsState === 'awaiting_card_scan';
+  const reputationLabel = useMemo(() => {
+    const raw = String(profile?.reputationScore ?? '0').trim();
+    if (!raw) {
+      return '0';
+    }
+
+    const asNumber = Number(raw);
+    if (Number.isFinite(asNumber)) {
+      return Math.floor(asNumber).toLocaleString();
+    }
+
+    return raw;
+  }, [profile?.reputationScore]);
 
   const resetRelayerQrFlow = useCallback((nextState: 'idle' | 'closed' = 'idle') => {
     setRelayerSessionId('');
@@ -457,12 +471,16 @@ export function ProfilePage() {
 
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className="rounded-xl bg-slate-50 p-4">
               <p className="text-xs uppercase tracking-wider text-slate-500">tCNR</p>
               <p className="mt-1 text-xl font-semibold text-slate-900">
                 {loadingBalance ? 'Loading...' : `${chainoraBalance} ${tcnrSymbol}`}
               </p>
+            </div>
+            <div className="rounded-xl bg-indigo-50 p-4 ring-1 ring-indigo-200">
+              <p className="text-xs uppercase tracking-wider text-indigo-700">Reputation</p>
+              <p className="mt-1 text-xl font-semibold text-indigo-800">{reputationLabel}</p>
             </div>
             <div className="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
               <p className="text-xs uppercase tracking-wider text-emerald-700">{stablecoinSymbol}</p>

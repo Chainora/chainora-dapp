@@ -63,15 +63,36 @@ export const useGroupPhaseViewQuery = ({
 
       const data = query.state.data as ApiGroupDetailView | undefined;
       if (!data) {
-        return activeSelectionHint ? 45_000 : 90_000;
+        return activeSelectionHint ? 30_000 : 90_000;
       }
-      if (data.selection.isCurrentActivePhase) {
-        return 60_000;
-      }
+
       if (data.selection.isHistoricalView || data.selection.isFutureView) {
+        const status = data.group?.groupStatus ?? '';
+        if (
+          status === 'funding'
+          || status === 'bidding'
+          || status === 'payout'
+          || status === 'deadlinepassed'
+          || status === 'ended_period'
+          || status === 'voting_extension'
+        ) {
+          return 20_000;
+        }
         return 180_000;
       }
-      return 120_000;
+
+      if (data.selection.isCurrentActivePhase) {
+        const countdownSeconds = Math.max(0, Math.floor(data.phaseMeta?.countdownSeconds ?? 0));
+        if (countdownSeconds <= 15) {
+          return 2_000;
+        }
+        if (countdownSeconds <= 90) {
+          return 5_000;
+        }
+        return 30_000;
+      }
+
+      return 60_000;
     },
     queryFn: () => loadGroupPhaseView(accessToken, refreshSession, {
       poolId,

@@ -3,6 +3,7 @@ import type {
   ApiGroupViewPeriodMeta,
   ApiGroupViewPhaseMeta,
 } from '../../../services/groupsService';
+import { formatToken } from '../utils';
 import { PhaseCountdown } from './PhaseCountdown';
 import { StatusBadge } from './StatusBadge';
 
@@ -52,7 +53,7 @@ export function BiddingPhasePanel({
           <p className="text-sm text-slate-700">
             Best bidder: {bestBidder ? bestBidder.address : periodMeta.bestBidder || 'Not selected'}
           </p>
-          <p className="text-sm text-slate-700">Best discount: {periodMeta.bestDiscount}</p>
+          <p className="text-sm text-slate-700">Best discount: {formatToken(periodMeta.bestDiscount)}</p>
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">

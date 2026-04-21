@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 
 import type {
   ApiGroup,
+  ApiGroupViewRuntimeMeta,
   ApiGroupViewPermissions,
   ApiGroupViewSelection,
 } from '../../../services/groupsService';
@@ -11,6 +12,7 @@ type UsePhasePermissionsParams = {
   group: ApiGroup | undefined;
   permissions: ApiGroupViewPermissions | undefined;
   selection: ApiGroupViewSelection | undefined;
+  runtime: ApiGroupViewRuntimeMeta | undefined;
   isViewerMember: boolean;
 };
 
@@ -35,6 +37,7 @@ export const usePhasePermissions = ({
   group,
   permissions,
   selection,
+  runtime,
   isViewerMember,
 }: UsePhasePermissionsParams): PhasePermissionViewModel => {
   return useMemo(() => {
@@ -45,14 +48,36 @@ export const usePhasePermissions = ({
     const isReadOnlySelection = isHistoricalView || isFutureView || !isCurrentActivePhase;
 
     const canContribute = Boolean(permissions?.canContribute && isCurrentActivePhase);
-    const canBid = Boolean(permissions?.canBid && isCurrentActivePhase);
+    const nowUnix = Math.floor(Date.now() / 1000);
+    const runtimeCollectingSyncToPayout = Boolean(
+      runtime
+      && runtime.storedPeriodStatus === 0
+      && runtime.allActiveContributed
+      && runtime.contributionDeadline > 0
+      && nowUnix >= runtime.contributionDeadline
+      && !runtime.auctionReady,
+    );
+    const runtimeAuctionSyncToPayout = Boolean(
+      runtime
+      && runtime.storedPeriodStatus === 1
+      && runtime.auctionDeadline > 0
+      && nowUnix >= runtime.auctionDeadline,
+    );
+    const shouldForceSyncRuntime = isCurrentActivePhase
+      && (runtimeCollectingSyncToPayout || runtimeAuctionSyncToPayout);
+
+    const canBid = shouldForceSyncRuntime
+      ? false
+      : Boolean(permissions?.canBid && isCurrentActivePhase);
     const canClaim = Boolean(permissions?.canClaim && isCurrentActivePhase);
     const canFinalize = Boolean(permissions?.canFinalize && isCurrentActivePhase);
     const canVoteContinue = Boolean(permissions?.canVoteExtend && isCurrentActivePhase);
     const canVoteEnd = Boolean(permissions?.canVoteExtend && isCurrentActivePhase);
     const canClaimYield = Boolean(permissions?.canClaimYield);
 
-    const canCloseAuction = Boolean(permissions?.canCloseAuction && isCurrentActivePhase);
+    const canCloseAuction = shouldForceSyncRuntime
+      ? true
+      : Boolean(permissions?.canCloseAuction && isCurrentActivePhase);
 
     const canRequestJoin = Boolean(
       groupStatus === 'forming' &&
@@ -98,6 +123,11 @@ export const usePhasePermissions = ({
   }, [
     group,
     isViewerMember,
+    runtime?.allActiveContributed,
+    runtime?.auctionDeadline,
+    runtime?.auctionReady,
+    runtime?.contributionDeadline,
+    runtime?.storedPeriodStatus,
     permissions?.canBid,
     permissions?.canClaim,
     permissions?.canCloseAuction,

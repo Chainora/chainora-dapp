@@ -3,21 +3,29 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePublicClient } from 'wagmi';
 
 import {
+  readDashboardGroupCacheEntry,
   readDashboardGroupCache,
+  readJoinedPoolIdCacheEntry,
   readJoinedPoolIdCache,
   writeDashboardGroupCache,
   writeJoinedPoolIdCache,
 } from '../features/dashboard/cache';
 import {
+  DASHBOARD_EMPTY_RESULT_SYNC_STREAK_THRESHOLD,
   DASHBOARD_FORCE_SYNC_ONCE_KEY,
+  DASHBOARD_GROUP_CACHE_STALE_MS,
+  DASHBOARD_HIDDEN_CHECK_INTERVAL_MS,
+  DASHBOARD_JOINED_MEMBERSHIP_REFRESH_TTL_MS,
+  DASHBOARD_JOINED_POLL_INTERVAL_MS,
   CONTRIBUTION_SYMBOL,
   DASHBOARD_PREFERRED_MODE_KEY,
+  DASHBOARD_PUBLIC_POLL_INTERVAL_MS,
+  DASHBOARD_RESUME_SYNC_MIN_GAP_MS,
+  DASHBOARD_SYNC_MIN_GAP_MS,
   JOINED_FILTER_TIMEOUT_MS,
-  JOINED_REFRESH_INTERVAL_MS,
-  REFRESH_INTERVAL_MS,
 } from '../features/dashboard/constants';
 import { filterJoinedGroupsWithTimeout } from '../features/dashboard/groupMembership';
-import type { DashboardMode } from '../features/dashboard/types';
+import type { DashboardFetchReason, DashboardMode } from '../features/dashboard/types';
 import { DashboardGroupCard, DashboardStats } from '../features/dashboard/ui';
 import {
   areGroupsEqual,
@@ -83,6 +91,35 @@ const sortDashboardGroups = (
     return left.poolId.localeCompare(right.poolId);
   });
 
+const fetchReasonPriority: Record<DashboardFetchReason, number> = {
+  poll: 1,
+  initial: 2,
+  resume_visible: 3,
+  filter_change: 4,
+  manual: 5,
+};
+
+const mergeFetchReason = (
+  current: DashboardFetchReason | null,
+  next: DashboardFetchReason,
+): DashboardFetchReason => {
+  if (!current) {
+    return next;
+  }
+  return fetchReasonPriority[next] >= fetchReasonPriority[current] ? next : current;
+};
+
+type LoadKeyMeta = {
+  lastChainSyncAt: number;
+  lastAnyFetchAt: number;
+  emptyResultStreak: number;
+};
+
+type JoinedMembershipMeta = {
+  candidateSignature: string;
+  lastVerifiedAt: number;
+};
+
 export function DashboardPage() {
   const navigate = useNavigate();
   const publicClient = usePublicClient();
@@ -98,40 +135,100 @@ export function DashboardPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
   const loadSeqRef = useRef(0);
-  const hydratedLoadKeysRef = useRef<Set<string>>(new Set());
+  const inFlightRef = useRef(false);
+  const pendingRefetchRef = useRef<DashboardFetchReason | null>(null);
+  const drainingRef = useRef(false);
   const forceSyncFirstLoadRef = useRef(false);
+  const hasRequestedInitialLoadRef = useRef(false);
+  const wasHiddenRef = useRef(false);
+  const loadMetaByKeyRef = useRef<Map<string, LoadKeyMeta>>(new Map());
+  const joinedMembershipMetaRef = useRef<Map<string, JoinedMembershipMeta>>(new Map());
+
   const viewerAddress = useMemo(() => normalizeViewerAddress(address), [address]);
+  const normalizedQuery = useMemo(() => query.trim(), [query]);
+  const normalizedMinReputationFilter = useMemo(() => minReputationFilter.trim(), [minReputationFilter]);
+  const normalizedMaxReputationFilter = useMemo(() => maxReputationFilter.trim(), [maxReputationFilter]);
+
   const dashboardQueryKey = useMemo(
     () =>
       [
-        query.trim().toLowerCase(),
+        normalizedQuery.toLowerCase(),
         sortBy,
         sortOrder,
-        minReputationFilter.trim(),
-        maxReputationFilter.trim(),
+        normalizedMinReputationFilter,
+        normalizedMaxReputationFilter,
       ].join('|'),
-    [maxReputationFilter, minReputationFilter, query, sortBy, sortOrder],
+    [
+      normalizedMaxReputationFilter,
+      normalizedMinReputationFilter,
+      normalizedQuery,
+      sortBy,
+      sortOrder,
+    ],
   );
 
-  const loadGroups = useCallback(async () => {
+  const loadKey = useMemo(
+    () => `${mode}:${normalizedQuery.toLowerCase()}:${viewerAddress.toLowerCase()}:${dashboardQueryKey}`,
+    [dashboardQueryKey, mode, normalizedQuery, viewerAddress],
+  );
+
+  const joinedMembershipKey = useMemo(
+    () =>
+      `${viewerAddress.toLowerCase()}:${mode}:${normalizedQuery.toLowerCase()}:${normalizedMinReputationFilter}:${normalizedMaxReputationFilter}`,
+    [
+      mode,
+      normalizedMaxReputationFilter,
+      normalizedMinReputationFilter,
+      normalizedQuery,
+      viewerAddress,
+    ],
+  );
+
+  const performLoadGroups = useCallback(async (reason: DashboardFetchReason) => {
     if (!token) {
       return;
     }
 
-    const normalizedQuery = query.trim();
-    const loadKey = `${mode}:${normalizedQuery.toLowerCase()}:${viewerAddress.toLowerCase()}:${dashboardQueryKey}`;
     const loadSeq = loadSeqRef.current + 1;
     loadSeqRef.current = loadSeq;
 
     const shouldApply = (): boolean => loadSeq === loadSeqRef.current;
-
     setError('');
+
+    const nowMs = Date.now();
+    const existingMeta = loadMetaByKeyRef.current.get(loadKey);
+    const loadMeta: LoadKeyMeta = existingMeta ?? {
+      lastChainSyncAt: 0,
+      lastAnyFetchAt: 0,
+      emptyResultStreak: 0,
+    };
+
+    const cacheEntry = readDashboardGroupCacheEntry(mode, dashboardQueryKey);
+    const isCacheFresh = Boolean(
+      cacheEntry
+      && cacheEntry.cachedAt > 0
+      && (nowMs - cacheEntry.cachedAt) <= DASHBOARD_GROUP_CACHE_STALE_MS,
+    );
+    const isFirstLoadForKey = loadMeta.lastAnyFetchAt === 0;
+
+    let shouldSync = false;
+    if (forceSyncFirstLoadRef.current || reason === 'manual') {
+      shouldSync = true;
+    } else if (isFirstLoadForKey) {
+      shouldSync = !isCacheFresh;
+    } else if (reason === 'poll') {
+      shouldSync = (nowMs - loadMeta.lastChainSyncAt) >= DASHBOARD_SYNC_MIN_GAP_MS
+        || loadMeta.emptyResultStreak >= DASHBOARD_EMPTY_RESULT_SYNC_STREAK_THRESHOLD;
+    } else if (reason === 'resume_visible') {
+      shouldSync = (nowMs - loadMeta.lastChainSyncAt) >= DASHBOARD_RESUME_SYNC_MIN_GAP_MS;
+    } else {
+      shouldSync = !isCacheFresh;
+    }
 
     try {
       let result: ApiGroup[];
       const scope = 'all';
       const visibility: GroupVisibility = mode === 'public' ? 'public' : 'all';
-      const shouldSync = hydratedLoadKeysRef.current.has(loadKey) || forceSyncFirstLoadRef.current;
 
       const fetchWithToken = async (accessToken: string): Promise<ApiGroup[]> =>
         fetchGroups(accessToken, scope, normalizedQuery, {
@@ -139,8 +236,8 @@ export function DashboardPage() {
           visibility,
           sortBy,
           sortOrder,
-          minReputation: minReputationFilter.trim(),
-          maxReputation: maxReputationFilter.trim(),
+          minReputation: normalizedMinReputationFilter,
+          maxReputation: normalizedMaxReputationFilter,
         });
 
       try {
@@ -149,7 +246,11 @@ export function DashboardPage() {
         const refreshedToken = await refreshSession();
         result = await fetchWithToken(refreshedToken);
       }
-      hydratedLoadKeysRef.current.add(loadKey);
+
+      loadMeta.lastAnyFetchAt = nowMs;
+      if (shouldSync) {
+        loadMeta.lastChainSyncAt = nowMs;
+      }
       forceSyncFirstLoadRef.current = false;
 
       if (!shouldApply()) {
@@ -170,7 +271,8 @@ export function DashboardPage() {
             : []),
         );
         const cacheViewerKey = viewerAddress || address;
-        const cachedPoolIds = readJoinedPoolIdCache(cacheViewerKey);
+        const joinedPoolEntry = readJoinedPoolIdCacheEntry(cacheViewerKey);
+        const cachedPoolIds = joinedPoolEntry?.poolIds ?? readJoinedPoolIdCache(cacheViewerKey);
         const fallbackPoolSet = new Set([
           ...cachedPoolIds.map(item => item.toLowerCase()),
           ...creatorPoolSet,
@@ -188,33 +290,58 @@ export function DashboardPage() {
         }
 
         if (!viewerAddress) {
-          if (fallbackPoolSet.size > 0) {
-            result = result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()));
-          } else {
-            result = [];
-          }
+          result = fallbackPoolSet.size > 0
+            ? result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()))
+            : [];
         } else {
-          const joinedFilter = await filterJoinedGroupsWithTimeout(
-            publicClient,
-            result,
-            viewerAddress,
-            JOINED_FILTER_TIMEOUT_MS,
+          const candidateSignature = result
+            .map(group => group.poolId.toLowerCase())
+            .sort()
+            .join(',');
+          const joinedMembershipMeta = joinedMembershipMetaRef.current.get(joinedMembershipKey);
+          const joinedCacheFresh = Boolean(
+            joinedPoolEntry
+            && joinedPoolEntry.cachedAt > 0
+            && (nowMs - joinedPoolEntry.cachedAt) <= DASHBOARD_JOINED_MEMBERSHIP_REFRESH_TTL_MS,
           );
+          const candidateChanged = joinedMembershipMeta?.candidateSignature !== candidateSignature;
+          const membershipExpired = !joinedMembershipMeta
+            || (nowMs - joinedMembershipMeta.lastVerifiedAt) >= DASHBOARD_JOINED_MEMBERSHIP_REFRESH_TTL_MS;
+          const shouldVerifyMembership = result.length > 0
+            && (reason === 'manual' || shouldSync || candidateChanged || membershipExpired || !joinedCacheFresh);
 
-          if (!shouldApply()) {
-            return;
-          }
+          if (shouldVerifyMembership) {
+            const joinedFilter = await filterJoinedGroupsWithTimeout(
+              publicClient,
+              result,
+              viewerAddress,
+              JOINED_FILTER_TIMEOUT_MS,
+            );
 
-          if (!joinedFilter.timedOut) {
-            const joinedPoolSet = new Set(joinedFilter.groups.map(group => group.poolId.toLowerCase()));
-            creatorPoolSet.forEach(poolId => joinedPoolSet.add(poolId));
-            result = result.filter(group => joinedPoolSet.has(group.poolId.toLowerCase()));
-            writeJoinedPoolIdCache(cacheViewerKey, result.map(group => group.poolId));
-          } else if (fallbackPoolSet.size > 0) {
-            result = result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()));
+            if (!shouldApply()) {
+              return;
+            }
+
+            if (!joinedFilter.timedOut) {
+              const joinedPoolSet = new Set(joinedFilter.groups.map(group => group.poolId.toLowerCase()));
+              creatorPoolSet.forEach(poolId => joinedPoolSet.add(poolId));
+              result = result.filter(group => joinedPoolSet.has(group.poolId.toLowerCase()));
+              writeJoinedPoolIdCache(cacheViewerKey, result.map(group => group.poolId));
+            } else if (fallbackPoolSet.size > 0) {
+              result = result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()));
+            } else {
+              result = [];
+            }
           } else {
-            result = [];
+            result = fallbackPoolSet.size > 0
+              ? result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()))
+              : [];
           }
+
+          joinedMembershipMetaRef.current.set(joinedMembershipKey, {
+            candidateSignature,
+            lastVerifiedAt: nowMs,
+          });
         }
       }
 
@@ -223,6 +350,8 @@ export function DashboardPage() {
       }
 
       const nextGroups = sortDashboardGroups(result, sortBy, sortOrder);
+      loadMeta.emptyResultStreak = nextGroups.length === 0 ? loadMeta.emptyResultStreak + 1 : 0;
+      loadMetaByKeyRef.current.set(loadKey, loadMeta);
       setGroups(previous => (areGroupsEqual(previous, nextGroups) ? previous : nextGroups));
       writeDashboardGroupCache(mode, dashboardQueryKey, nextGroups);
     } catch (loadError) {
@@ -240,17 +369,49 @@ export function DashboardPage() {
   }, [
     address,
     dashboardQueryKey,
-    maxReputationFilter,
-    minReputationFilter,
+    joinedMembershipKey,
+    loadKey,
     mode,
+    normalizedMaxReputationFilter,
+    normalizedMinReputationFilter,
+    normalizedQuery,
     publicClient,
-    query,
     refreshSession,
     sortBy,
     sortOrder,
     token,
     viewerAddress,
   ]);
+
+  const startLoadDrain = useCallback(() => {
+    if (drainingRef.current) {
+      return;
+    }
+
+    drainingRef.current = true;
+    void (async () => {
+      while (pendingRefetchRef.current) {
+        const nextReason = pendingRefetchRef.current;
+        pendingRefetchRef.current = null;
+        inFlightRef.current = true;
+        try {
+          await performLoadGroups(nextReason);
+        } finally {
+          inFlightRef.current = false;
+        }
+      }
+    })().finally(() => {
+      drainingRef.current = false;
+      if (pendingRefetchRef.current) {
+        startLoadDrain();
+      }
+    });
+  }, [performLoadGroups]);
+
+  const requestLoad = useCallback((reason: DashboardFetchReason) => {
+    pendingRefetchRef.current = mergeFetchReason(pendingRefetchRef.current, reason);
+    startLoadDrain();
+  }, [startLoadDrain]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -268,6 +429,22 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!token) {
+      hasRequestedInitialLoadRef.current = false;
+      pendingRefetchRef.current = null;
+      return;
+    }
+
+    if (!hasRequestedInitialLoadRef.current) {
+      hasRequestedInitialLoadRef.current = true;
+      requestLoad('initial');
+      return;
+    }
+
+    requestLoad('filter_change');
+  }, [loadKey, requestLoad, token]);
+
+  useEffect(() => {
     const cached = readDashboardGroupCache(mode, dashboardQueryKey);
     if (cached && cached.length > 0) {
       const sortedCached = sortDashboardGroups(cached, sortBy, sortOrder);
@@ -276,37 +453,47 @@ export function DashboardPage() {
   }, [dashboardQueryKey, mode, sortBy, sortOrder]);
 
   useEffect(() => {
+    if (!token) {
+      return;
+    }
+
     let cancelled = false;
     let timer: number | null = null;
+    const activeDelay = mode === 'joined'
+      ? DASHBOARD_JOINED_POLL_INTERVAL_MS
+      : DASHBOARD_PUBLIC_POLL_INTERVAL_MS;
 
-    const poll = async () => {
+    const poll = () => {
       if (cancelled) {
         return;
       }
 
       if (!isDocumentVisible()) {
-        scheduleNext();
+        wasHiddenRef.current = true;
+        scheduleNext(DASHBOARD_HIDDEN_CHECK_INTERVAL_MS);
         return;
       }
 
-      await loadGroups();
-      if (cancelled) {
-        return;
+      if (wasHiddenRef.current) {
+        wasHiddenRef.current = false;
+        requestLoad('resume_visible');
+      } else {
+        requestLoad('poll');
       }
 
-      scheduleNext();
+      scheduleNext(activeDelay);
     };
 
-    function scheduleNext() {
+    function scheduleNext(delay: number) {
       timer = window.setTimeout(
         () => {
-          void poll();
+          poll();
         },
-        mode === 'joined' ? JOINED_REFRESH_INTERVAL_MS : REFRESH_INTERVAL_MS,
+        delay,
       );
     }
 
-    void poll();
+    scheduleNext(activeDelay);
 
     return () => {
       cancelled = true;
@@ -314,28 +501,7 @@ export function DashboardPage() {
         window.clearTimeout(timer);
       }
     };
-  }, [loadGroups, mode]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return undefined;
-    }
-
-    const refreshOnVisible = () => {
-      if (!isDocumentVisible()) {
-        return;
-      }
-      void loadGroups();
-    };
-
-    window.addEventListener('focus', refreshOnVisible);
-    document.addEventListener('visibilitychange', refreshOnVisible);
-
-    return () => {
-      window.removeEventListener('focus', refreshOnVisible);
-      document.removeEventListener('visibilitychange', refreshOnVisible);
-    };
-  }, [loadGroups]);
+  }, [mode, requestLoad, token]);
 
   const lifecycleStatuses = useMemo(() => groups.map(deriveDashboardGroupStatus), [groups]);
   const activeCount = useMemo(
@@ -438,7 +604,7 @@ export function DashboardPage() {
         <button
           type="button"
           onClick={() => {
-            void loadGroups();
+            requestLoad('manual');
           }}
           className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600"
         >

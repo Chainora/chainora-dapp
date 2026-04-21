@@ -19,7 +19,7 @@ import {
 import {
   formatInitCompact,
   formatToken,
-  parseUintInput,
+  parseTokenAmountInput,
   requiredTwoThirdsVotes,
   toUsernameLabel,
 } from '../utils';
@@ -134,11 +134,29 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   const [syncWithChain, setSyncWithChain] = useState(false);
   const hasCompletedInitialChainSyncRef = useRef(false);
   const chainSyncInFlightRef = useRef(false);
+  const nearDeadlineSyncKeyRef = useRef('');
+  const postDeadlineSyncKeyRef = useRef('');
+  const postDeadlineTimerRef = useRef<number | null>(null);
+  const phaseMismatchSyncKeyRef = useRef('');
 
   useEffect(() => {
     setSyncWithChain(false);
     hasCompletedInitialChainSyncRef.current = false;
     chainSyncInFlightRef.current = false;
+    nearDeadlineSyncKeyRef.current = '';
+    postDeadlineSyncKeyRef.current = '';
+    phaseMismatchSyncKeyRef.current = '';
+    if (typeof window !== 'undefined' && postDeadlineTimerRef.current !== null) {
+      window.clearTimeout(postDeadlineTimerRef.current);
+      postDeadlineTimerRef.current = null;
+    }
+
+    return () => {
+      if (typeof window !== 'undefined' && postDeadlineTimerRef.current !== null) {
+        window.clearTimeout(postDeadlineTimerRef.current);
+        postDeadlineTimerRef.current = null;
+      }
+    };
   }, [poolId]);
 
   const overviewQuery = useGroupOverviewQuery({
@@ -278,6 +296,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     group,
     permissions: phaseView?.permissions,
     selection: phaseView?.selection,
+    runtime: phaseView?.runtime,
     isViewerMember,
   });
 
@@ -289,51 +308,89 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     return getAddress(raw);
   }, [group?.poolAddress]);
 
-  const selectedCycleForBids = useMemo(() => {
-    if (phaseView?.selection.cycle && phaseView.selection.cycle > 0) {
-      return phaseView.selection.cycle;
-    }
+  const activeCycleForBids = useMemo(() => {
     try {
-      const parsed = Number(group?.currentCycle ?? '1');
-      return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 1;
+      const fallbackCycle = Number(group?.currentCycle ?? '1');
+      if (!Number.isFinite(fallbackCycle) || fallbackCycle <= 0) {
+        return 1;
+      }
+      const normalizedFallback = Math.floor(fallbackCycle);
+      if (
+        phaseView?.selection.isCurrentActivePhase
+        && phaseView.selection.cycle
+        && phaseView.selection.cycle > 0
+      ) {
+        return Math.floor(phaseView.selection.cycle);
+      }
+      return normalizedFallback;
     } catch {
       return 1;
     }
-  }, [group?.currentCycle, phaseView?.selection.cycle]);
+  }, [group?.currentCycle, phaseView?.selection.cycle, phaseView?.selection.isCurrentActivePhase]);
 
-  const selectedPeriodForBids = useMemo(() => {
-    if (phaseView?.selection.period && phaseView.selection.period > 0) {
-      return phaseView.selection.period;
+  const activePeriodForBids = useMemo(() => {
+    if (phaseView?.selection.activePeriod && phaseView.selection.activePeriod > 0) {
+      return Math.floor(phaseView.selection.activePeriod);
     }
     return activePeriod > 0 ? activePeriod : 1;
-  }, [activePeriod, phaseView?.selection.period]);
+  }, [activePeriod, phaseView?.selection.activePeriod]);
 
-  const selectedPhaseForBids = phaseView?.selection.phase ?? activePhase;
+  const activePhaseForBids = phaseView?.selection.activePhase ?? activePhase;
 
   const memberBidsQuery = useQuery({
-    queryKey: ['group-member-bids', poolId, poolAddress?.toLowerCase() ?? '', selectedCycleForBids, selectedPeriodForBids],
+    queryKey: ['group-member-bids', poolId, poolAddress?.toLowerCase() ?? '', activeCycleForBids, activePeriodForBids, activePhaseForBids],
     enabled:
       Boolean(publicClient)
       && Boolean(poolAddress)
-      && selectedPhaseForBids === 'bidding'
-      && selectedCycleForBids > 0
-      && selectedPeriodForBids > 0,
+      && activePhaseForBids === 'bidding'
+      && activeCycleForBids > 0
+      && activePeriodForBids > 0,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+    refetchInterval: query => {
+      if (!isDocumentVisible()) {
+        return false;
+      }
+      const data = query.state.data as Record<string, string> | undefined;
+      if (!data || Object.keys(data).length === 0) {
+        return 4_000;
+      }
+      return 8_000;
+    },
     retry: false,
     queryFn: async (): Promise<Record<string, string>> => {
       if (!publicClient || !poolAddress) {
         return {};
       }
 
-      const cycleId = BigInt(selectedCycleForBids);
-      const periodId = BigInt(selectedPeriodForBids);
-      const logs = await publicClient.getLogs({
+      const cycleId = BigInt(activeCycleForBids);
+      const periodId = BigInt(activePeriodForBids);
+      const filteredLogs = await publicClient.getLogs({
         address: poolAddress,
         event: CHAINORA_BID_SUBMITTED_EVENT,
         args: { cycleId, periodId },
       });
+
+      let logs = filteredLogs;
+      const bestBidderKey = phaseView?.periodMeta.bestBidder?.trim().toLowerCase() ?? '';
+      const hasBestBidder = bestBidderKey !== '' && bestBidderKey !== ZERO_ADDRESS;
+      if (logs.length === 0 && hasBestBidder) {
+        try {
+          const fallbackLogs = await publicClient.getLogs({
+            address: poolAddress,
+            event: CHAINORA_BID_SUBMITTED_EVENT,
+            fromBlock: 0n,
+            toBlock: 'latest',
+          });
+          logs = fallbackLogs.filter(log => (
+            log.args.cycleId === cycleId
+            && log.args.periodId === periodId
+          ));
+        } catch {
+          logs = filteredLogs;
+        }
+      }
 
       const bids: Record<string, string> = {};
       for (const log of logs) {
@@ -353,16 +410,17 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       'group-extension-votes',
       poolId,
       poolAddress?.toLowerCase() ?? '',
-      selectedCycleForBids,
-      selectedPeriodForBids,
+      activeCycleForBids,
+      activePeriodForBids,
+      activePhaseForBids,
     ],
     enabled:
       Boolean(publicClient)
       && Boolean(poolAddress)
       && groupStatus === 'voting_extension'
-      && selectedPhaseForBids === 'ending'
-      && selectedCycleForBids > 0
-      && selectedPeriodForBids > 0,
+      && activePhaseForBids === 'ending'
+      && activeCycleForBids > 0
+      && activePeriodForBids > 0,
     staleTime: 15_000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -372,8 +430,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
         return {};
       }
 
-      const cycleId = BigInt(selectedCycleForBids);
-      const periodId = BigInt(selectedPeriodForBids);
+      const cycleId = BigInt(activeCycleForBids);
+      const periodId = BigInt(activePeriodForBids);
       const periodFinalizedLogs = await publicClient.getLogs({
         address: poolAddress,
         event: CHAINORA_PERIOD_FINALIZED_EVENT,
@@ -418,12 +476,12 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       const displayLabel = profile?.username
         ? toUsernameLabel(profile.username)
         : formatInitCompact(initAddress);
-      const bidAmountRaw = selectedPhaseForBids === 'bidding'
+      const bidAmountRaw = activePhaseForBids === 'bidding'
         ? memberBids[normalizedAddress] ?? null
         : null;
       let state = member.state;
       let badge = member.badge;
-      if (groupStatus === 'voting_extension' && selectedPhaseForBids === 'ending') {
+      if (groupStatus === 'voting_extension' && activePhaseForBids === 'ending') {
         const memberVote = extensionVotes[normalizedAddress];
         if (memberVote === 'continue') {
           state = 'vote_continue';
@@ -435,9 +493,9 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
           state = 'vote_pending';
           badge = 'No vote yet';
         }
-      } else if (selectedPhaseForBids === 'ending' && member.state === 'pending_finalize') {
+      } else if (activePhaseForBids === 'ending' && member.state === 'pending_finalize') {
         if (hasRecipient && normalizedAddress === recipientLower) {
-          badge = `Claimer period ${selectedPeriodForBids}`;
+          badge = `Claimer period ${activePeriodForBids}`;
         } else {
           badge = '';
         }
@@ -464,8 +522,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     phaseView?.periodMeta.recipient,
     groupStatus,
     profileMap,
-    selectedPeriodForBids,
-    selectedPhaseForBids,
+    activePeriodForBids,
+    activePhaseForBids,
   ]);
 
   const canProposeInvite = groupStatus === 'forming' && isViewerActiveMember;
@@ -536,6 +594,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       setSyncWithChain(true);
       await Promise.allSettled([
         membershipProposalsQuery.refetch(),
+        memberBidsQuery.refetch(),
+        extensionVotesQuery.refetch(),
       ]);
       return;
     }
@@ -544,8 +604,16 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       overviewQuery.refetch(),
       viewQuery.refetch(),
       membershipProposalsQuery.refetch(),
+      memberBidsQuery.refetch(),
+      extensionVotesQuery.refetch(),
     ]);
-  }, [membershipProposalsQuery.refetch, overviewQuery.refetch, viewQuery.refetch]);
+  }, [
+    extensionVotesQuery.refetch,
+    memberBidsQuery.refetch,
+    membershipProposalsQuery.refetch,
+    overviewQuery.refetch,
+    viewQuery.refetch,
+  ]);
 
   const applySupportRailOptimistic = useCallback((intent: PoolActionIntent) => {
     const poolAddressKey = poolAddress?.toLowerCase() ?? '';
@@ -902,6 +970,31 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     () => formatToken(phaseView?.userClaimState.claimableYield ?? '0'),
     [phaseView?.userClaimState.claimableYield],
   );
+  const fundingProgressHint = useMemo(() => {
+    const runtime = phaseView?.runtime;
+    const phaseMeta = phaseView?.phaseMeta;
+    if (!runtime || !phaseMeta) {
+      return '';
+    }
+    if (activePhase !== 'funding' || groupStatus !== 'funding') {
+      return '';
+    }
+    if (phaseMeta.phaseStatus !== 'active') {
+      return '';
+    }
+    if (!runtime.allActiveContributed) {
+      return '';
+    }
+    if (phaseMeta.countdownSeconds <= 0) {
+      return '';
+    }
+    return 'All contributions received. Bidding opens when funding timer ends.';
+  }, [
+    activePhase,
+    groupStatus,
+    phaseView?.phaseMeta,
+    phaseView?.runtime,
+  ]);
 
   const viewerLower = viewerAddress?.toLowerCase() ?? '';
   const viewerReadyMembershipProposal = useMemo(
@@ -954,10 +1047,10 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   const onSubmitBid = useCallback(() => {
     try {
       setInputError('');
-      if (selectedPeriodForBids >= totalPeriods) {
+      if (activePeriodForBids >= totalPeriods) {
         throw new Error('Bidding is disabled in the final period.');
       }
-      const discount = parseUintInput(bidDiscountInput, 'Bid discount');
+      const discount = parseTokenAmountInput(bidDiscountInput, 'Bid discount');
       const currentBestDiscount = (() => {
         try {
           return BigInt(phaseView?.periodMeta.bestDiscount ?? '0');
@@ -967,7 +1060,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       })();
       if (discount <= currentBestDiscount) {
         throw new Error(
-          `Bid discount must be greater than current best discount (${currentBestDiscount.toString()}).`,
+          `Bid discount must be greater than current best discount (${formatToken(currentBestDiscount.toString())}).`,
         );
       }
 
@@ -980,7 +1073,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       })();
       if (totalContributed > 0n && discount >= totalContributed) {
         throw new Error(
-          `Bid discount must be lower than total contributed (${totalContributed.toString()}).`,
+          `Bid discount must be lower than total contributed (${formatToken(totalContributed.toString())}).`,
         );
       }
 
@@ -998,7 +1091,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     bidDiscountInput,
     phaseView?.periodMeta.bestDiscount,
     phaseView?.periodMeta.totalContributed,
-    selectedPeriodForBids,
+    activePeriodForBids,
     totalPeriods,
     triggerAction,
   ]);
@@ -1233,10 +1326,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       : '';
 
   const onRefresh = useCallback(() => {
-    void overviewQuery.refetch();
-    void viewQuery.refetch();
-    void membershipProposalsQuery.refetch();
-  }, [membershipProposalsQuery.refetch, overviewQuery.refetch, viewQuery.refetch]);
+    void refreshGroupDetailNow();
+  }, [refreshGroupDetailNow]);
 
   const hasReachedFormingTarget = groupStatus === 'forming'
     && (group?.activeMemberCount ?? 0) >= Math.max(group?.targetMembers ?? 0, 1);
@@ -1262,6 +1353,100 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       window.clearInterval(timer);
     };
   }, [hasReachedFormingTarget, poolActionQr.isActing, refreshGroupDetailNow]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !token || poolActionQr.isActing) {
+      return;
+    }
+    if (!phaseView || typeof window === 'undefined') {
+      return;
+    }
+    if (chainSyncInFlightRef.current || syncWithChain) {
+      return;
+    }
+
+    const runtime = phaseView.runtime;
+    const phaseMeta = phaseView.phaseMeta;
+    const selection = phaseView.selection;
+    if (!runtime || !phaseMeta || !selection) {
+      return;
+    }
+    if (phaseMeta.phaseStatus !== 'active') {
+      return;
+    }
+
+    let shouldSyncAtDeadline = false;
+    if (selection.activePhase === 'funding') {
+      shouldSyncAtDeadline = runtime.allActiveContributed;
+    } else if (selection.activePhase === 'bidding' || selection.activePhase === 'payout') {
+      shouldSyncAtDeadline = true;
+    } else if (selection.activePhase === 'ending' && groupStatus === 'voting_extension') {
+      shouldSyncAtDeadline = true;
+    }
+    if (!shouldSyncAtDeadline) {
+      return;
+    }
+
+    const guardKey = `${selection.cycle}:${selection.activePeriod}:${selection.activePhase}`;
+    const countdownSeconds = Math.max(0, Math.floor(phaseMeta.countdownSeconds ?? 0));
+
+    if (countdownSeconds > 0 && countdownSeconds <= 3 && nearDeadlineSyncKeyRef.current !== guardKey) {
+      nearDeadlineSyncKeyRef.current = guardKey;
+      setSyncWithChain(true);
+    }
+
+    if (countdownSeconds <= 0 && postDeadlineSyncKeyRef.current !== guardKey) {
+      postDeadlineSyncKeyRef.current = guardKey;
+      if (postDeadlineTimerRef.current !== null) {
+        window.clearTimeout(postDeadlineTimerRef.current);
+      }
+      postDeadlineTimerRef.current = window.setTimeout(() => {
+        setSyncWithChain(true);
+        postDeadlineTimerRef.current = null;
+      }, 2_000);
+    }
+  }, [
+    groupStatus,
+    isAuthenticated,
+    phaseView,
+    poolActionQr.isActing,
+    syncWithChain,
+    token,
+  ]);
+
+  useEffect(() => {
+    if (!phaseView || poolActionQr.isActing || syncWithChain) {
+      return;
+    }
+
+    const expectedPhaseByStatus: Record<string, string> = {
+      funding: 'funding',
+      bidding: 'bidding',
+      payout: 'payout',
+      deadlinepassed: 'ending',
+      ended_period: 'ending',
+      voting_extension: 'ending',
+      archived: 'ending',
+    };
+
+    const expectedPhase = expectedPhaseByStatus[groupStatus];
+    if (!expectedPhase) {
+      return;
+    }
+
+    const activePhaseFromView = phaseView.selection?.activePhase?.trim().toLowerCase() ?? '';
+    if (!activePhaseFromView || activePhaseFromView === expectedPhase) {
+      return;
+    }
+
+    const mismatchKey = `${phaseView.selection.cycle}:${phaseView.selection.activePeriod}:${expectedPhase}:${activePhaseFromView}`;
+    if (phaseMismatchSyncKeyRef.current === mismatchKey) {
+      return;
+    }
+
+    phaseMismatchSyncKeyRef.current = mismatchKey;
+    setSyncWithChain(true);
+  }, [groupStatus, phaseView, poolActionQr.isActing, syncWithChain]);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
@@ -1309,6 +1494,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     contributionLabel,
     totalPayoutLabel,
     claimableYieldLabel,
+    phaseHintMessage: fundingProgressHint,
     membersLabel: `${group?.activeMemberCount ?? 0}/${Math.max(group?.targetMembers ?? totalPeriods, 1)}`,
     currentCycle: Number.parseInt(group?.currentCycle ?? '1', 10) || 1,
     viewerAddress,

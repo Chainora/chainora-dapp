@@ -86,6 +86,7 @@ export type ApiGroupViewRuntimeMeta = {
   auctionDeadline: number;
   payoutDeadline: number;
   extendVoteDeadline: number;
+  allActiveContributed: boolean;
   auctionReady: boolean;
   auctionCloseReady: boolean;
   finalizeReady: boolean;

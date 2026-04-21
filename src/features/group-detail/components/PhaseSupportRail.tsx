@@ -147,7 +147,7 @@ export function PhaseSupportRail({
                       <OverflowSlider value={member.secondaryLabel} className="text-[11px] text-slate-500" />
                       {uiPhase === 'bidding' ? (
                         <OverflowSlider
-                          value={member.bidAmountRaw ? `Bid: ${member.bidAmountRaw}` : 'Bid: no bid yet'}
+                          value={member.bidAmountLabel ? `Bid: ${member.bidAmountLabel}` : 'Bid: no bid yet'}
                           className="text-[11px] text-slate-600"
                         />
                       ) : null}

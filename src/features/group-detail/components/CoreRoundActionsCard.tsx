@@ -69,7 +69,7 @@ export function CoreRoundActionsCard({
               <input
                 value={bidDiscountInput}
                 onChange={event => onBidDiscountChange(event.target.value)}
-                placeholder="Bid discount (wei)"
+                placeholder="Bid discount (tcUSD)"
                 disabled={isActing || !actionAvailability.canSubmitBid}
                 className="flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm"
               />

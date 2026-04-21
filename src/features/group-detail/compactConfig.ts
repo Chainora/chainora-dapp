@@ -26,30 +26,14 @@ export const resolveCompactUiPhase = (
   groupStatus: GroupStatus,
   activePhase: GroupPhase,
 ): CompactUiPhase => {
-  // Active phase from backend is the source of truth for time-based transitions.
-  // This ensures UI moves from payout -> ending as soon as payout countdown reaches 0.
-  if (activePhase === 'ending') {
-    if (groupStatus === 'forming') {
-      return 'forming';
-    }
-    return 'ending';
-  }
-
   switch (groupStatus) {
     case 'forming':
       return 'forming';
-    case 'funding':
-      return 'funding';
-    case 'bidding':
-      return 'bidding';
-    case 'payout':
-      return 'payout';
     case 'deadlinepassed':
     case 'ended_period':
     case 'voting_extension':
     case 'archived':
       return 'ending';
-    case 'active':
     default:
       return phaseFromGroupPhase[activePhase];
   }
