@@ -5,6 +5,8 @@ export type MemberPhaseView = {
   displayLabel: string;
   secondaryLabel: string;
   avatarUrl: string;
+  reputationScore?: string;
+  joinedGroupsCount?: number;
   state: string;
   badge: string;
   isCurrentUser: boolean;

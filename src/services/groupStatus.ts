@@ -40,33 +40,39 @@ export const deriveGroupStatus = (params: {
   backendGroupStatus?: string | null;
 }): GroupStatus => {
   const fromBackend = toNormalizedBackendStatus(params.backendGroupStatus);
-  if (fromBackend) {
-    return fromBackend;
+  // `deadlinepassed` is backend-derived and not directly inferable from current period snapshot.
+  // For all other statuses, prefer chain-derived state to avoid stale DB status pinning UI in old phases.
+  if (fromBackend === 'deadlinepassed') {
+    return 'deadlinepassed';
   }
 
-  if (params.poolStatus === 0) {
-    return 'forming';
-  }
-  if (params.poolStatus === 2) {
-    return 'archived';
-  }
+  const chainDerivedStatus: GroupStatus = (() => {
+    if (params.poolStatus === 0) {
+      return 'forming';
+    }
+    if (params.poolStatus === 2) {
+      return 'archived';
+    }
 
-  if (params.poolStatus === 1 && params.cycleCompleted && params.extendVoteOpen) {
-    return 'voting_extension';
-  }
+    if (params.poolStatus === 1 && params.cycleCompleted && params.extendVoteOpen) {
+      return 'voting_extension';
+    }
 
-  switch (params.periodStatus) {
-    case 0:
-      return 'funding';
-    case 1:
-      return 'bidding';
-    case 2:
-      return 'payout';
-    case 3:
-      return 'ended_period';
-    default:
-      return params.poolStatus === 1 ? 'active' : 'forming';
-  }
+    switch (params.periodStatus) {
+      case 0:
+        return 'funding';
+      case 1:
+        return 'bidding';
+      case 2:
+        return 'payout';
+      case 3:
+        return 'ended_period';
+      default:
+        return params.poolStatus === 1 ? 'active' : 'forming';
+    }
+  })();
+
+  return chainDerivedStatus;
 };
 
 export const groupStatusLabel = (status: GroupStatus): string => {

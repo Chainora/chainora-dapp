@@ -165,16 +165,21 @@ export function DurationInput(props: {
     });
   };
 
+  const updateDigitsOnly = (field: keyof DurationForm, rawValue: string) => {
+    update(field, rawValue.replace(/[^\d]/g, ''));
+  };
+
   return (
     <div>
       <FieldLabel icon={props.iconName}>{props.label}</FieldLabel>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         <div className="relative">
           <input
-            type="number"
-            min={0}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={props.value.days}
-            onChange={event => update('days', event.target.value)}
+            onChange={event => updateDigitsOnly('days', event.target.value)}
             placeholder={`${props.inputHint}`}
             className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-9 text-slate-900 outline-none ring-sky-200 transition focus:ring"
           />
@@ -182,11 +187,11 @@ export function DurationInput(props: {
         </div>
         <div className="relative">
           <input
-            type="number"
-            min={0}
-            max={23}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={props.value.hours}
-            onChange={event => update('hours', event.target.value)}
+            onChange={event => updateDigitsOnly('hours', event.target.value)}
             placeholder={`${props.inputHint}`}
             className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-9 text-slate-900 outline-none ring-sky-200 transition focus:ring"
           />
@@ -194,11 +199,11 @@ export function DurationInput(props: {
         </div>
         <div className="relative">
           <input
-            type="number"
-            min={0}
-            max={59}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={props.value.minutes}
-            onChange={event => update('minutes', event.target.value)}
+            onChange={event => updateDigitsOnly('minutes', event.target.value)}
             placeholder={`${props.inputHint}`}
             className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-11 text-slate-900 outline-none ring-sky-200 transition focus:ring"
           />
@@ -206,11 +211,11 @@ export function DurationInput(props: {
         </div>
         <div className="relative">
           <input
-            type="number"
-            min={0}
-            max={59}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
             value={props.value.seconds}
-            onChange={event => update('seconds', event.target.value)}
+            onChange={event => updateDigitsOnly('seconds', event.target.value)}
             placeholder={`${props.inputHint}`}
             className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-11 text-slate-900 outline-none ring-sky-200 transition focus:ring"
           />

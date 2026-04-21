@@ -21,6 +21,7 @@ export function PhasePrimaryPanel({
   isConnected,
   isActing,
   canProposeInvite,
+  canLeaveDuringForming,
   candidateAddress,
   canConfirmJoin,
   confirmJoinLabel,
@@ -31,6 +32,7 @@ export function PhasePrimaryPanel({
   onBidDiscountChange,
   onCandidateAddressChange,
   onProposeInvite,
+  onLeaveDuringForming,
   onRequestJoin,
   onContribute,
   onSubmitBid,
@@ -50,6 +52,7 @@ export function PhasePrimaryPanel({
   isConnected: boolean;
   isActing: boolean;
   canProposeInvite: boolean;
+  canLeaveDuringForming: boolean;
   candidateAddress: string;
   canConfirmJoin: boolean;
   confirmJoinLabel: string;
@@ -60,6 +63,7 @@ export function PhasePrimaryPanel({
   onBidDiscountChange: (value: string) => void;
   onCandidateAddressChange: (value: string) => void;
   onProposeInvite: (candidateAddress: string) => void;
+  onLeaveDuringForming: () => void;
   onRequestJoin: () => void;
   onContribute: () => void;
   onSubmitBid: () => void;
@@ -115,6 +119,15 @@ export function PhasePrimaryPanel({
               {inviteDisabledReason ? (
                 <p className="text-xs text-slate-500">{inviteDisabledReason}</p>
               ) : null}
+              <button
+                type="button"
+                disabled={!canLeaveDuringForming || isActing}
+                onClick={onLeaveDuringForming}
+                title={!canLeaveDuringForming ? 'Leave is only available while group is forming.' : undefined}
+                className="w-full rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isActing ? 'Preparing...' : 'Out Group'}
+              </button>
             </>
           ) : null}
 
@@ -186,7 +199,7 @@ export function PhasePrimaryPanel({
     const canPrimaryBid = permissions.canBid;
     const canPrimaryClose = !canPrimaryBid && permissions.canCloseAuction;
     const canDoPrimary = canPrimaryBid || canPrimaryClose;
-    const primaryLabel = canPrimaryBid ? 'Submit Bid' : 'Close Auction';
+    const primaryLabel = canPrimaryBid ? 'Submit Bid' : 'Sync Runtime';
     const onPrimaryClick = canPrimaryBid ? onSubmitBid : onCloseAuction;
 
     return (
@@ -308,7 +321,7 @@ export function PhasePrimaryPanel({
         <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
       </div>
       <p className="mt-2 text-sm text-slate-600">
-        Any active member can finalize after period end. Finalize will auto-transfer payout to recipient if still unclaimed, then open next period.
+        Any active member can sync runtime after payout deadline. This transition auto-settles unclaimed payout to recipient, then opens the next period.
       </p>
 
       <div className="mt-auto space-y-2">
@@ -319,7 +332,7 @@ export function PhasePrimaryPanel({
           title={!permissions.canFinalize ? permissions.disabledReason : undefined}
           className={`w-full ${primaryButtonClass}`}
         >
-          {isActing ? 'Preparing...' : 'Finalize Period'}
+          {isActing ? 'Preparing...' : 'Sync Runtime'}
         </button>
         {!permissions.canFinalize && permissions.disabledReason ? (
           <p className="text-xs text-slate-500">{permissions.disabledReason}</p>

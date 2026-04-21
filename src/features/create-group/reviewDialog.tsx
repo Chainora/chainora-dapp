@@ -1,6 +1,5 @@
 export function CreateGroupReviewDialog({
   open,
-  reviewWsStatus,
   reviewStatusMessage,
   isPreparingReviewSession,
   isReviewQrLocked,
@@ -12,7 +11,6 @@ export function CreateGroupReviewDialog({
   onDone,
 }: {
   open: boolean;
-  reviewWsStatus: string;
   reviewStatusMessage: string;
   isPreparingReviewSession: boolean;
   isReviewQrLocked: boolean;
@@ -48,13 +46,14 @@ export function CreateGroupReviewDialog({
         <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
           <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Status</p>
           <p className="mt-1 text-sm font-semibold text-sky-700">{reviewStatusMessage}</p>
-          <p className="mt-1 text-xs text-slate-500">{isPreparingReviewSession ? 'Preparing session...' : reviewWsStatus}</p>
         </div>
 
         <div className="mt-3 grid place-items-center">
           {isReviewQrLocked && !isCreatePoolSuccess ? (
             <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-5 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
-              QR locked after first scan. Continue in native app and tap NFC card to complete create-pool.
+              QR already scanned.
+              <br />
+              Continue on your phone and tap your card.
             </div>
           ) : qrImageUrl ? (
             <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
@@ -62,7 +61,7 @@ export function CreateGroupReviewDialog({
             </div>
           ) : (
             <div className="flex h-[220px] w-[220px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
-              {isPreparingReviewSession ? 'Preparing QR session...' : 'Unable to generate QR payload'}
+              {isPreparingReviewSession ? 'Preparing QR...' : 'Could not create QR. Please refresh.'}
             </div>
           )}
         </div>
@@ -91,7 +90,7 @@ export function CreateGroupReviewDialog({
             disabled={!isCreatePoolSuccess}
             onClick={onDone}
           >
-            Done, check dashboard
+            Done
           </button>
         </div>
       </div>

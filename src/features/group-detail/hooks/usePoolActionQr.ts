@@ -14,12 +14,42 @@ import { mapPoolActionStatusMessage, shouldLockPoolActionQr } from '../utils';
 
 const POOL_ACTION_QR_FEATURE = 'chainora-native-wallet:pool-action';
 
+const normalizePoolActionError = (raw: unknown): string => {
+  const fallback = 'Could not prepare QR. Please refresh and try again.';
+  const message = raw instanceof Error ? raw.message.trim() : '';
+  if (!message) {
+    return fallback;
+  }
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('session')
+    || lower.includes('payload')
+    || lower.includes('websocket')
+    || lower.includes('rpc')
+    || lower.includes('tx')
+    || lower.includes('nonce')
+    || lower.includes('sequence')
+    || lower.includes('status')
+    || lower.includes('selector')
+  ) {
+    return fallback;
+  }
+
+  return message;
+};
+
 export type PoolActionIntent = {
   actionKey: string;
   label: string;
   functionName: string;
   args?: readonly unknown[];
   valueWei?: string;
+};
+
+export type PoolActionCompletion = {
+  intent: PoolActionIntent;
+  completionStatus: 'confirmed';
 };
 
 type BuiltPoolActionIntent = PoolActionIntent & {
@@ -29,7 +59,7 @@ type BuiltPoolActionIntent = PoolActionIntent & {
 type UsePoolActionQrParams = {
   token: string;
   poolAddress: Address | null;
-  onActionSuccess?: (intent: PoolActionIntent) => void;
+  onActionSuccess?: (result: PoolActionCompletion) => void;
 };
 
 export type UsePoolActionQrResult = {
@@ -39,7 +69,6 @@ export type UsePoolActionQrResult = {
   isPreparing: boolean;
   status: string;
   statusMessage: string;
-  sessionId: string;
   qrImageUrl: string;
   qrLocked: boolean;
   isSuccess: boolean;
@@ -123,40 +152,38 @@ export const usePoolActionQr = ({
         chainoraApiBase,
         createdSession.sessionId,
         (payload: QrSessionWsEvent) => {
-          const nextStatus = String(payload.status ?? '').trim();
-          if (!nextStatus) {
+          const rawStatus = String(payload.status ?? '').trim();
+          if (!rawStatus) {
             return;
           }
 
+          const nextStatus = rawStatus === 'pool_action_pending_confirmation'
+            ? 'pool_action_waiting_receipt'
+            : rawStatus;
           setStatus(nextStatus);
 
           if (nextStatus === 'pool_action_failed') {
-            setActionError('Pool action failed on mobile app. Refresh QR to retry.');
-            setErrorMessage('Pool action failed on mobile app. Refresh QR to retry.');
+            const message = 'Could not complete this action. Refresh QR and try again.';
+            setActionError(message);
+            setErrorMessage(message);
             return;
           }
 
           if (nextStatus === 'pool_action_success') {
-            setActionMessage(`${pendingIntent.label} confirmed on-chain.`);
+            setActionMessage(`${pendingIntent.label} completed successfully.`);
             setActionError('');
-            onActionSuccessRef.current?.(pendingIntent);
+            onActionSuccessRef.current?.({
+              intent: pendingIntent,
+              completionStatus: 'confirmed',
+            });
             closeDialog();
             return;
-          }
-
-          if (nextStatus === 'pool_action_pending_confirmation') {
-            setActionMessage(
-              `${pendingIntent.label} was submitted. Chain confirmation is pending, but you can continue using the app.`,
-            );
-            setActionError('');
-            onActionSuccessRef.current?.(pendingIntent);
-            closeDialog();
           }
         },
         socketState => {
           setStatus(current => (
             socketState === 'closed'
-            && (current === 'pool_action_success' || current === 'pool_action_pending_confirmation')
+            && current === 'pool_action_success'
               ? current
               : socketState
           ));
@@ -165,7 +192,7 @@ export const usePoolActionQr = ({
 
       wsRef.current = ws;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create signing session';
+      const message = normalizePoolActionError(error);
       setErrorMessage(message);
       setActionError(message);
       setStatus('error');
@@ -193,11 +220,11 @@ export const usePoolActionQr = ({
 
   const startAction = useCallback((intent: PoolActionIntent) => {
     if (!poolAddress) {
-      setActionError('Pool address is missing. Refresh and retry.');
+      setActionError('Group details are missing. Please refresh and try again.');
       return;
     }
     if (!token) {
-      setActionError('Authentication expired. Please login again.');
+      setActionError('Login expired. Please log in again.');
       return;
     }
 
@@ -208,7 +235,7 @@ export const usePoolActionQr = ({
     });
 
     setActionError('');
-    setActionMessage(`Preparing ${intent.label} QR signing...`);
+    setActionMessage(`Preparing ${intent.label}...`);
     setSession(null);
     sessionRef.current = null;
     setStatus('idle');
@@ -252,8 +279,7 @@ export const usePoolActionQr = ({
       || isPreparing
       || status === 'awaiting_card_scan'
       || status === 'pool_action_signing_tx'
-      || status === 'pool_action_waiting_receipt'
-      || status === 'pool_action_pending_confirmation',
+      || status === 'pool_action_waiting_receipt',
     [isOpen, isPreparing, status],
   );
 
@@ -264,10 +290,9 @@ export const usePoolActionQr = ({
     isPreparing,
     status,
     statusMessage,
-    sessionId: session?.sessionId ?? '',
     qrImageUrl,
     qrLocked,
-    isSuccess: status === 'pool_action_success' || status === 'pool_action_pending_confirmation',
+    isSuccess: status === 'pool_action_success',
     errorMessage,
     actionMessage,
     actionError,

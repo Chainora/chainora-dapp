@@ -2,9 +2,15 @@ import type { GroupStatus } from '../../../services/groupStatus';
 import { compactPhaseLabel, type CompactUiPhase } from '../compactConfig';
 import { StatusBadge } from './StatusBadge';
 
-const timelineSteps: CompactUiPhase[] = ['forming', 'funding', 'bidding', 'payout', 'ending'];
+const stepsForPeriod = (activePeriod: number): CompactUiPhase[] => {
+  if (activePeriod <= 1) {
+    return ['forming', 'funding', 'bidding', 'payout', 'ending'];
+  }
+  return ['funding', 'bidding', 'payout', 'ending'];
+};
 
 const resolveStepState = (
+  timelineSteps: CompactUiPhase[],
   step: CompactUiPhase,
   activePhase: CompactUiPhase,
   groupStatus: GroupStatus,
@@ -42,10 +48,15 @@ const stepTone = (state: 'completed' | 'active' | 'locked'): 'success' | 'info' 
 export function PoolTimeline({
   activePhase,
   groupStatus,
+  activePeriod,
 }: {
   activePhase: CompactUiPhase;
   groupStatus: GroupStatus;
+  activePeriod: number;
 }) {
+  const timelineSteps = stepsForPeriod(activePeriod);
+  const columnsClass = timelineSteps.length === 5 ? 'grid-cols-5' : 'grid-cols-4';
+
   return (
     <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center justify-between gap-2">
@@ -53,9 +64,9 @@ export function PoolTimeline({
         <StatusBadge label={compactPhaseLabel(activePhase)} tone="info" />
       </div>
 
-      <div className="mt-2 grid grid-cols-5 gap-2">
+      <div className={`mt-2 grid gap-2 ${columnsClass}`}>
         {timelineSteps.map(step => {
-          const state = resolveStepState(step, activePhase, groupStatus);
+          const state = resolveStepState(timelineSteps, step, activePhase, groupStatus);
           const isActive = state === 'active';
           return (
             <div

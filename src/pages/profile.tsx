@@ -48,6 +48,28 @@ const sanitizeRelayerErrorMessage = (raw: string): string => {
   return trimmed;
 };
 
+const toFriendlyRelayerError = (raw: unknown, fallback: string): string => {
+  const message = sanitizeRelayerErrorMessage(raw instanceof Error ? raw.message : String(raw ?? ''));
+  if (!message) {
+    return fallback;
+  }
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('payload')
+    || lower.includes('session')
+    || lower.includes('websocket')
+    || lower.includes('status')
+    || lower.includes('tx')
+    || lower.includes('hash')
+    || lower.includes('request failed')
+  ) {
+    return fallback;
+  }
+
+  return message;
+};
+
 export function ProfilePage() {
   const { isAuthenticated, setAvatarUrl } = useAuth();
   const { authFetch } = useAuthFetch();
@@ -73,6 +95,12 @@ export function ProfilePage() {
   const hasUsername = Boolean(normalizeProfileUsername(profile?.username));
   const tcnrSymbol = (import.meta.env.VITE_CHAINORA_CURRENCY_SYMBOL?.trim() || 'tCNR').toUpperCase();
   const isAwaitingCardScan = relayerWsState === 'awaiting_card_scan';
+
+  const resetRelayerQrFlow = useCallback((nextState: 'idle' | 'closed' = 'idle') => {
+    setRelayerSessionId('');
+    setRelayerQrPayload('');
+    setRelayerWsState(nextState);
+  }, []);
 
   const refreshProfile = useCallback(
     async (showGlobalLoading: boolean, clearMessages: boolean) => {
@@ -172,26 +200,25 @@ export function ProfilePage() {
       relayerSessionId,
       event => {
         if (event.status === 'registered') {
-          setNotice(`Username registered on-chain. Tx: ${event.txHash ?? 'unknown'}`);
+          setNotice('Username registered successfully.');
           if (event.username) {
             setProfile(prev => (prev ? { ...prev, username: event.username as string } : prev));
             setRegisterUsername('');
             setShowRegisterForm(false);
           }
           void refreshProfile(false, false);
-          setRelayerSessionId('');
-          setRelayerQrPayload('');
-          setRelayerWsState('closed');
+          resetRelayerQrFlow('closed');
           setIsQrDialogOpen(false);
           return;
         }
 
         if (event.status === 'failed') {
-          const relayerError = sanitizeRelayerErrorMessage(event.error ?? 'Relayer registration failed');
-          setError(`Relayer error: ${relayerError}`);
-          setRelayerSessionId('');
-          setRelayerQrPayload('');
-          setRelayerWsState('closed');
+          const relayerError = toFriendlyRelayerError(
+            event.error ?? '',
+            'Could not register username. Please refresh QR and try again.',
+          );
+          setError(relayerError);
+          resetRelayerQrFlow('closed');
         }
       },
       state => {
@@ -202,7 +229,7 @@ export function ProfilePage() {
     return () => {
       ws.close();
     };
-  }, [refreshProfile, relayerSessionId]);
+  }, [refreshProfile, relayerSessionId, resetRelayerQrFlow]);
 
   useEffect(() => {
     if (!profile?.address) {
@@ -273,7 +300,7 @@ export function ProfilePage() {
     }
 
     if (hasUsername) {
-      setError('This wallet already has a username on-chain.');
+      setError('This wallet already has a username.');
       return;
     }
 
@@ -303,9 +330,9 @@ export function ProfilePage() {
 
       setRelayerSessionId(payload.sessionId);
       setRelayerQrPayload(qrPayload);
-      setNotice('Scan QR with native app and tap card to sign free registration');
+      setNotice('Scan QR in Chainora app, then tap your card to confirm.');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to create relayer payload');
+      setError(toFriendlyRelayerError(err, 'Could not prepare QR. Please try again.'));
     } finally {
       setRegistering(false);
     }
@@ -313,15 +340,25 @@ export function ProfilePage() {
 
   const closeQrDialog = () => {
     setIsQrDialogOpen(false);
-    setRelayerSessionId('');
-    setRelayerQrPayload('');
-    setRelayerWsState('idle');
+    resetRelayerQrFlow('idle');
     setRegistering(false);
   };
 
   if (!isAuthenticated) {
     return <Navigate to="/" />;
   }
+
+  const relayerStatusMessage = registering
+    ? 'Preparing QR...'
+    : relayerWsState === 'awaiting_card_scan'
+      ? 'QR scanned. Tap your card to continue.'
+      : relayerWsState === 'open'
+        ? 'Waiting for confirmation from your phone...'
+        : relayerWsState === 'closed'
+          ? 'Window closed.'
+          : relayerWsState === 'error'
+            ? 'Connection lost. Please refresh QR.'
+            : 'Scan QR to continue.';
 
   return (
     <section className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -390,7 +427,7 @@ export function ProfilePage() {
               Register Username
             </button>
             <p className="mt-1 text-xs text-slate-600">
-              {hasUsername ? 'This account already has an on-chain username.' : 'Available for accounts without username.'}
+              {hasUsername ? 'This account already has a username.' : 'Available for accounts without username.'}
             </p>
 
             {showRegisterForm && !hasUsername ? (
@@ -466,16 +503,16 @@ export function ProfilePage() {
             </div>
 
             <div className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Session Status</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{registering ? 'creating_session' : relayerWsState}</p>
-              {relayerSessionId ? <p className="mt-1 text-xs text-slate-500">Session: {relayerSessionId}</p> : null}
-              <p className="mt-2 text-sm font-semibold text-sky-700">{isAwaitingCardScan ? 'pls scan card to register username' : 'scan qr to continue'}</p>
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Status</p>
+              <p className="mt-2 text-sm font-semibold text-sky-700">{relayerStatusMessage}</p>
             </div>
 
             <div className="mt-5 grid min-h-[280px] place-items-center">
               {isAwaitingCardScan ? (
                 <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-4 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
-                  pls scan card to register username
+                  QR already scanned.
+                  <br />
+                  Continue on your phone and tap your card.
                 </div>
               ) : relayerQrPayload ? (
                 <img
@@ -485,7 +522,7 @@ export function ProfilePage() {
                 />
               ) : (
                 <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
-                  {registering ? 'Preparing QR...' : 'Unable to create QR'}
+                  {registering ? 'Preparing QR...' : 'Could not create QR. Please refresh.'}
                 </div>
               )}
             </div>

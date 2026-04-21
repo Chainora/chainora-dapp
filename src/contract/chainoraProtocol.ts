@@ -161,8 +161,6 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'members' }),
     activeMembers: async (poolAddress: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'activeMembers' }),
-    allMembers: async (poolAddress: Address) =>
-      publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'allMembers' }),
     isMember: async (poolAddress: Address, member: Address) =>
       publicClient.readContract({ address: poolAddress, abi: POOL_ABI, functionName: 'isMember', args: [member] }),
     isActiveMember: async (poolAddress: Address, member: Address) =>
@@ -184,6 +182,12 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
         abi: POOL_ABI,
         functionName: 'periodInfo',
         args: [cycleId, periodId],
+      }),
+    runtimeStatus: async (poolAddress: Address) =>
+      publicClient.readContract({
+        address: poolAddress,
+        abi: POOL_ABI,
+        functionName: 'runtimeStatus',
       }),
   };
 
@@ -286,11 +290,11 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
         args: [discount],
       });
     },
-    closeAuctionAndSelectRecipient: async (poolAddress: Address) => {
+    syncRuntime: async (poolAddress: Address) => {
       return writeWithWallet({
         address: poolAddress,
         abi: POOL_ABI,
-        functionName: 'closeAuctionAndSelectRecipient',
+        functionName: 'syncRuntime',
       });
     },
     claimPayout: async (poolAddress: Address) => {
@@ -298,9 +302,6 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
     },
     claimYield: async (poolAddress: Address) => {
       return writeWithWallet({ address: poolAddress, abi: POOL_ABI, functionName: 'claimYield' });
-    },
-    finalizePeriod: async (poolAddress: Address) => {
-      return writeWithWallet({ address: poolAddress, abi: POOL_ABI, functionName: 'finalizePeriod' });
     },
     markDefaultAndArchive: async (poolAddress: Address, defaultedMember: Address) => {
       return writeWithWallet({

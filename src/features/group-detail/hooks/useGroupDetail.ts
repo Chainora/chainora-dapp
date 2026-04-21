@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAddress, isAddress, parseAbiItem, type Address } from 'viem';
 import { usePublicClient } from 'wagmi';
 
 import { fromInitAddress, toInitAddress } from '../../../components/UserDetail';
-import type { MembershipVoteMode } from '../../../components/group-detail/types';
+import type { InviteProposalView, MembershipVoteMode } from '../../../components/group-detail/types';
 import { useAuth } from '../../../context/AuthContext';
 import {
   fetchBasicProfilesByAddresses,
@@ -13,9 +13,16 @@ import {
 } from '../../../services/profileService';
 import {
   type ApiGroup,
+  type ApiGroupDetailView,
   type ApiGroupViewPeriodMeta,
 } from '../../../services/groupsService';
-import { formatInitCompact, formatToken, parseUintInput, toUsernameLabel } from '../utils';
+import {
+  formatInitCompact,
+  formatToken,
+  parseUintInput,
+  requiredTwoThirdsVotes,
+  toUsernameLabel,
+} from '../utils';
 import {
   deriveActivePhase,
   deriveLifecycleStatus,
@@ -26,9 +33,10 @@ import {
 import { useGroupOverviewQuery } from './useGroupOverviewQuery';
 import { useGroupPhaseViewQuery } from './useGroupPhaseViewQuery';
 import { usePhasePermissions } from './usePhasePermissions';
-import { type PoolActionIntent, usePoolActionQr } from './usePoolActionQr';
+import { type PoolActionCompletion, type PoolActionIntent, usePoolActionQr } from './usePoolActionQr';
 import { useGroupMembershipProposals } from './useGroupMembershipProposals';
 import type { MemberPhaseView } from '../components/MemberStatePanel';
+import type { UiToast } from '../types';
 
 const CHAINORA_BID_SUBMITTED_EVENT = parseAbiItem(
   'event ChainoraBidSubmitted(uint256 indexed cycleId, uint256 indexed periodId, address indexed bidder, uint256 discount)',
@@ -123,12 +131,22 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   } = useAuth();
 
   const viewerAddress = useMemo(() => parseViewerAddress(address), [address]);
+  const [syncWithChain, setSyncWithChain] = useState(false);
+  const hasCompletedInitialChainSyncRef = useRef(false);
+  const chainSyncInFlightRef = useRef(false);
+
+  useEffect(() => {
+    setSyncWithChain(false);
+    hasCompletedInitialChainSyncRef.current = false;
+    chainSyncInFlightRef.current = false;
+  }, [poolId]);
 
   const overviewQuery = useGroupOverviewQuery({
     poolId,
     accessToken: token,
     refreshSession,
     enabled: isAuthenticated && Boolean(token),
+    sync: syncWithChain,
   });
 
   const overview = overviewQuery.data;
@@ -142,7 +160,47 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     refreshSession,
     enabled: isAuthenticated && Boolean(token) && Boolean(overview),
     activeSelectionHint,
+    sync: syncWithChain,
   });
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) {
+      return;
+    }
+    if (syncWithChain || hasCompletedInitialChainSyncRef.current || chainSyncInFlightRef.current) {
+      return;
+    }
+    if (!overviewQuery.data || !viewQuery.data) {
+      return;
+    }
+
+    setSyncWithChain(true);
+  }, [isAuthenticated, overviewQuery.data, syncWithChain, token, viewQuery.data]);
+
+  useEffect(() => {
+    if (!syncWithChain || chainSyncInFlightRef.current) {
+      return;
+    }
+
+    chainSyncInFlightRef.current = true;
+    let active = true;
+
+    void Promise.allSettled([
+      overviewQuery.refetch(),
+      viewQuery.refetch(),
+    ]).finally(() => {
+      chainSyncInFlightRef.current = false;
+      if (!active) {
+        return;
+      }
+      hasCompletedInitialChainSyncRef.current = true;
+      setSyncWithChain(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [overviewQuery.refetch, syncWithChain, viewQuery.refetch]);
 
   const phaseView = viewQuery.data;
   const group = resolveViewGroup(overview, phaseView) as ApiGroup | undefined;
@@ -198,6 +256,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
         address: viewerAddress,
         username: username || existing?.username || '',
         avatarUrl: avatarUrl || existing?.avatarUrl || '',
+        reputationScore: existing?.reputationScore || '0',
+        joinedGroupsCount: existing?.joinedGroupsCount ?? 0,
       });
     }
 
@@ -220,14 +280,6 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     selection: phaseView?.selection,
     isViewerMember,
   });
-
-  const invalidateAfterAction = useCallback(async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['group-detail', poolId] }),
-      queryClient.invalidateQueries({ queryKey: ['group-phase-view', poolId] }),
-      queryClient.invalidateQueries({ queryKey: ['group-membership-proposals'] }),
-    ]);
-  }, [poolId, queryClient]);
 
   const poolAddress = useMemo(() => {
     const raw = group?.poolAddress?.trim() ?? '';
@@ -396,6 +448,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
         displayLabel,
         secondaryLabel: initAddress,
         avatarUrl: profile?.avatarUrl || '',
+        reputationScore: profile?.reputationScore || '0',
+        joinedGroupsCount: profile?.joinedGroupsCount ?? 0,
         state,
         badge,
         isCurrentUser: Boolean(member.isCurrentUser),
@@ -415,6 +469,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   ]);
 
   const canProposeInvite = groupStatus === 'forming' && isViewerActiveMember;
+  const canLeaveDuringForming = groupStatus === 'forming' && isViewerMember;
   const [candidateAddress, setCandidateAddressState] = useState('');
 
   const membershipProposalsQuery = useGroupMembershipProposals({
@@ -476,9 +531,282 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     [membershipProposalsQuery.proposals, proposalProfileMap],
   );
 
-  const handlePoolActionSuccess = useCallback(() => {
-    void invalidateAfterAction();
-  }, [invalidateAfterAction]);
+  const refreshGroupDetailNow = useCallback(async (options?: { syncChain?: boolean }) => {
+    if (options?.syncChain) {
+      setSyncWithChain(true);
+      await Promise.allSettled([
+        membershipProposalsQuery.refetch(),
+      ]);
+      return;
+    }
+
+    await Promise.allSettled([
+      overviewQuery.refetch(),
+      viewQuery.refetch(),
+      membershipProposalsQuery.refetch(),
+    ]);
+  }, [membershipProposalsQuery.refetch, overviewQuery.refetch, viewQuery.refetch]);
+
+  const applySupportRailOptimistic = useCallback((intent: PoolActionIntent) => {
+    const poolAddressKey = poolAddress?.toLowerCase() ?? '';
+    if (!poolAddressKey) {
+      return;
+    }
+
+    const viewerAddressKey = viewerAddress?.toLowerCase() ?? '';
+    const now = Date.now();
+    const quorumMemberCount = Math.max(group?.activeMemberCount ?? 0, 1);
+    const requiredYesVotes = requiredTwoThirdsVotes(quorumMemberCount);
+
+    const toBigIntString = (value: unknown): string | null => {
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return BigInt(Math.trunc(value)).toString();
+      }
+      if (typeof value === 'string' && value.trim()) {
+        try {
+          return BigInt(value.trim()).toString();
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    };
+
+    queryClient.setQueryData<InviteProposalView[] | undefined>(
+      ['group-membership-proposals', poolAddressKey, viewerAddressKey],
+      previous => {
+        const proposals = previous ?? [];
+
+        if (intent.actionKey === 'propose_invite') {
+          const candidateRaw = intent.args?.[0];
+          if (typeof candidateRaw !== 'string' || !isAddress(candidateRaw)) {
+            return proposals;
+          }
+
+          const candidate = getAddress(candidateRaw);
+          const candidateLower = candidate.toLowerCase();
+          const existingOpen = proposals.some(
+            proposal => proposal.voteMode === 'invite'
+              && proposal.open
+              && proposal.candidate.toLowerCase() === candidateLower,
+          );
+          if (existingOpen) {
+            return proposals;
+          }
+
+          return [
+            {
+              voteMode: 'invite',
+              proposalId: `pending-invite-${candidateLower}-${now}`,
+              candidate,
+              yesVotes: 0,
+              noVotes: 0,
+              open: true,
+              myVote: null,
+              quorumMemberCount,
+              requiredYesVotes,
+              approvalRatio: 0,
+              snapshotEligible: false,
+              canVote: false,
+            },
+            ...proposals,
+          ];
+        }
+
+        if (intent.actionKey === 'submit_join_request') {
+          if (!viewerAddress) {
+            return proposals;
+          }
+
+          const viewerLower = viewerAddress.toLowerCase();
+          const existingOpen = proposals.some(
+            proposal => proposal.voteMode === 'join-request'
+              && proposal.open
+              && proposal.candidate.toLowerCase() === viewerLower,
+          );
+          if (existingOpen) {
+            return proposals;
+          }
+
+          return [
+            {
+              voteMode: 'join-request',
+              proposalId: `pending-join-request-${viewerLower}-${now}`,
+              candidate: viewerAddress,
+              yesVotes: 0,
+              noVotes: 0,
+              open: true,
+              myVote: null,
+              quorumMemberCount,
+              requiredYesVotes,
+              approvalRatio: 0,
+              snapshotEligible: false,
+              canVote: false,
+            },
+            ...proposals,
+          ];
+        }
+
+        if (
+          intent.actionKey === 'vote_invite_yes'
+          || intent.actionKey === 'vote_invite_no'
+          || intent.actionKey === 'vote_join_request_yes'
+          || intent.actionKey === 'vote_join_request_no'
+        ) {
+          const proposalId = toBigIntString(intent.args?.[0]);
+          const support = intent.args?.[1];
+          if (!proposalId || typeof support !== 'boolean') {
+            return proposals;
+          }
+
+          return proposals.map(proposal => {
+            if (proposal.proposalId !== proposalId) {
+              return proposal;
+            }
+
+            const nextVote = support ? 'yes' : 'no';
+            let yesVotes = proposal.yesVotes;
+            let noVotes = proposal.noVotes;
+
+            if (proposal.myVote === null) {
+              if (support) {
+                yesVotes += 1;
+              } else {
+                noVotes += 1;
+              }
+            } else if (proposal.myVote !== nextVote) {
+              if (proposal.myVote === 'yes' && yesVotes > 0) {
+                yesVotes -= 1;
+              } else if (proposal.myVote === 'no' && noVotes > 0) {
+                noVotes -= 1;
+              }
+              if (support) {
+                yesVotes += 1;
+              } else {
+                noVotes += 1;
+              }
+            }
+
+            const effectiveQuorum = Math.max(proposal.quorumMemberCount, 1);
+            const approvalRatio = Math.max(0, Math.min(100, Math.round((yesVotes / effectiveQuorum) * 100)));
+
+            return {
+              ...proposal,
+              yesVotes,
+              noVotes,
+              myVote: nextVote,
+              approvalRatio,
+              canVote: false,
+            };
+          });
+        }
+
+        return proposals;
+      },
+    );
+  }, [group?.activeMemberCount, poolAddress, queryClient, viewerAddress]);
+
+  const applyMembershipAcceptanceOptimistic = useCallback((intent: PoolActionIntent) => {
+    if (!viewerAddress) {
+      return;
+    }
+    if (intent.actionKey !== 'accept_join_request' && intent.actionKey !== 'accept_invite') {
+      return;
+    }
+
+    const viewerAddressLower = viewerAddress.toLowerCase();
+    const shouldIncrement = !isViewerMember;
+
+    queryClient.setQueryData<ApiGroup | undefined>(['group-detail', poolId], previous => {
+      if (!previous) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        activeMemberCount: shouldIncrement ? previous.activeMemberCount + 1 : previous.activeMemberCount,
+      };
+    });
+
+    queryClient.setQueryData<ApiGroupDetailView | undefined>(['group-phase-view', poolId], previous => {
+      if (!previous) {
+        return previous;
+      }
+
+      const hasViewer = previous.memberStates.some(member => (
+        member.isCurrentUser || member.address.trim().toLowerCase() === viewerAddressLower
+      ));
+
+      const nextMemberStates = hasViewer
+        ? previous.memberStates.map(member => (
+          member.isCurrentUser || member.address.trim().toLowerCase() === viewerAddressLower
+            ? {
+              ...member,
+              isCurrentUser: true,
+              isActiveMember: true,
+              state: member.state || 'active',
+              badge: member.badge || 'Member',
+            }
+            : member
+        ))
+        : [
+          ...previous.memberStates,
+          {
+            address: viewerAddress,
+            isCurrentUser: true,
+            isActiveMember: true,
+            state: 'active',
+            badge: 'Member',
+          },
+        ];
+
+      return {
+        ...previous,
+        group: {
+          ...previous.group,
+          activeMemberCount: hasViewer ? previous.group.activeMemberCount : previous.group.activeMemberCount + 1,
+        },
+        memberStates: nextMemberStates,
+      };
+    });
+
+    const poolAddressKey = poolAddress?.toLowerCase() ?? '';
+    if (!poolAddressKey) {
+      return;
+    }
+    const viewerAddressKey = viewerAddressLower;
+    const acceptedVoteMode = intent.actionKey === 'accept_join_request' ? 'join-request' : 'invite';
+
+    queryClient.setQueryData<InviteProposalView[] | undefined>(
+      ['group-membership-proposals', poolAddressKey, viewerAddressKey],
+      previous => {
+        if (!previous) {
+          return previous;
+        }
+
+        return previous.map(proposal => (
+          proposal.voteMode === acceptedVoteMode
+          && proposal.candidate.toLowerCase() === viewerAddressLower
+          && proposal.open
+            ? { ...proposal, open: false, canVote: false }
+            : proposal
+        ));
+      },
+    );
+  }, [isViewerMember, poolAddress, poolId, queryClient, viewerAddress]);
+
+  const handlePoolActionSuccess = useCallback(({ intent }: PoolActionCompletion) => {
+    applySupportRailOptimistic(intent);
+    applyMembershipAcceptanceOptimistic(intent);
+    void refreshGroupDetailNow({ syncChain: true });
+  }, [
+    applySupportRailOptimistic,
+    applyMembershipAcceptanceOptimistic,
+    refreshGroupDetailNow,
+  ]);
 
   const poolActionQr = usePoolActionQr({
     token,
@@ -487,6 +815,48 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   });
 
   const [inputError, setInputError] = useState('');
+  const [toasts, setToasts] = useState<UiToast[]>([]);
+  const toastCounterRef = useRef(1);
+  const lastActionMessageRef = useRef('');
+  const lastActionErrorRef = useRef('');
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(previous => previous.filter(item => item.id !== id));
+  }, []);
+
+  const pushToast = useCallback((tone: UiToast['tone'], message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const id = toastCounterRef.current;
+    toastCounterRef.current += 1;
+    setToasts(previous => [...previous, { id, tone, message: trimmed }]);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setToasts(previous => previous.filter(item => item.id !== id));
+      }, 5000);
+    }
+  }, []);
+
+  useEffect(() => {
+    const message = poolActionQr.actionMessage.trim();
+    if (!message || message === lastActionMessageRef.current) {
+      return;
+    }
+    lastActionMessageRef.current = message;
+    pushToast('success', message);
+  }, [poolActionQr.actionMessage, pushToast]);
+
+  useEffect(() => {
+    const message = poolActionQr.actionError.trim();
+    if (!message || message === lastActionErrorRef.current) {
+      return;
+    }
+    lastActionErrorRef.current = message;
+    pushToast('error', message);
+  }, [poolActionQr.actionError, pushToast]);
 
   const triggerAction = useCallback((intent: PoolActionIntent) => {
     setInputError('');
@@ -584,6 +954,9 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   const onSubmitBid = useCallback(() => {
     try {
       setInputError('');
+      if (selectedPeriodForBids >= totalPeriods) {
+        throw new Error('Bidding is disabled in the final period.');
+      }
       const discount = parseUintInput(bidDiscountInput, 'Bid discount');
       const currentBestDiscount = (() => {
         try {
@@ -621,13 +994,20 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
       const message = error instanceof Error ? error.message : 'Bid discount is invalid.';
       setInputError(message);
     }
-  }, [bidDiscountInput, phaseView?.periodMeta.bestDiscount, phaseView?.periodMeta.totalContributed, triggerAction]);
+  }, [
+    bidDiscountInput,
+    phaseView?.periodMeta.bestDiscount,
+    phaseView?.periodMeta.totalContributed,
+    selectedPeriodForBids,
+    totalPeriods,
+    triggerAction,
+  ]);
 
   const onCloseAuction = useCallback(() => {
     triggerAction({
-      actionKey: 'close_auction_and_select',
-      label: 'close auction',
-      functionName: 'closeAuctionAndSelectRecipient',
+      actionKey: 'sync_runtime_after_auction',
+      label: 'sync runtime',
+      functionName: 'syncRuntime',
     });
   }, [triggerAction]);
 
@@ -636,7 +1016,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   }, [triggerAction]);
 
   const onFinalizePeriod = useCallback(() => {
-    triggerAction({ actionKey: 'finalize_period', label: 'finalize period', functionName: 'finalizePeriod' });
+    triggerAction({ actionKey: 'sync_runtime_after_payout', label: 'sync runtime', functionName: 'syncRuntime' });
   }, [triggerAction]);
 
   const onVoteContinue = useCallback(() => {
@@ -749,6 +1129,18 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     })();
   }, [canProposeInvite, refreshSession, token, triggerAction, viewerAddress]);
 
+  const onLeaveDuringForming = useCallback(() => {
+    if (!canLeaveDuringForming) {
+      setInputError('Out group is only available while group is forming.');
+      return;
+    }
+    triggerAction({
+      actionKey: 'leave_during_forming',
+      label: 'leave group',
+      functionName: 'leaveDuringForming',
+    });
+  }, [canLeaveDuringForming, triggerAction]);
+
   const onVoteProposal = useCallback((proposalId: string, voteMode: MembershipVoteMode, support: boolean) => {
     triggerAction(
       voteMode === 'invite'
@@ -846,23 +1238,30 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     void membershipProposalsQuery.refetch();
   }, [membershipProposalsQuery.refetch, overviewQuery.refetch, viewQuery.refetch]);
 
+  const hasReachedFormingTarget = groupStatus === 'forming'
+    && (group?.activeMemberCount ?? 0) >= Math.max(group?.targetMembers ?? 0, 1);
+
   useEffect(() => {
-    if (!isAuthenticated || !token) {
+    if (!hasReachedFormingTarget || poolActionQr.isActing) {
       return undefined;
     }
     if (typeof window === 'undefined') {
       return undefined;
     }
 
+    void refreshGroupDetailNow();
+
     const timer = window.setInterval(() => {
       if (!isDocumentVisible()) {
         return;
       }
-      onRefresh();
-    }, 10_000);
+      void refreshGroupDetailNow();
+    }, 2_500);
 
-    return () => window.clearInterval(timer);
-  }, [isAuthenticated, onRefresh, token]);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [hasReachedFormingTarget, poolActionQr.isActing, refreshGroupDetailNow]);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
@@ -903,6 +1302,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     selection,
     periodMeta,
     phaseMeta: phaseView?.phaseMeta,
+    runtime: phaseView?.runtime,
+    historyRows: phaseView?.historyRows ?? [],
     memberStates: phaseView?.memberStates ?? [],
     memberPhaseViews,
     contributionLabel,
@@ -916,6 +1317,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     candidateAddress,
     setCandidateAddress,
     canProposeInvite,
+    canLeaveDuringForming,
     canConfirmJoin,
     confirmJoinLabel,
     canRequestJoin,
@@ -923,6 +1325,8 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     bidDiscountInput,
     setBidDiscountInput,
     inputError,
+    toasts,
+    dismissToast,
     permissions: permissionView,
     isViewerMember,
     isViewerActiveMember,
@@ -938,6 +1342,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     onRequestJoin,
     onConfirmJoin,
     onProposeInvite,
+    onLeaveDuringForming,
     onVoteProposal,
     onAcceptMembershipProposal,
     poolAction: poolActionQr,

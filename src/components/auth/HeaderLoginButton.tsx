@@ -13,6 +13,28 @@ import {
 import { buildQrImageUrl } from '../../services/qrFlow';
 import { Button } from '../ui/Button';
 
+const normalizeLoginError = (raw: unknown): string => {
+  const fallback = 'Could not start login. Please refresh QR and try again.';
+  const message = raw instanceof Error ? raw.message.trim() : '';
+  if (!message) {
+    return fallback;
+  }
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('session')
+    || lower.includes('payload')
+    || lower.includes('websocket')
+    || lower.includes('status')
+    || lower.includes('nonce')
+    || lower.includes('refresh token')
+  ) {
+    return fallback;
+  }
+
+  return message;
+};
+
 export function HeaderLoginButton() {
   const { address, username, avatarUrl, isAuthenticated, logout, setAuthenticated, syncProfile } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -53,36 +75,52 @@ export function HeaderLoginButton() {
 
   const statusMessage = useMemo(() => {
     if (wsStatus === 'awaiting_card_scan') {
-      return 'pls scan chainora card in your wallet to confirm';
+      return 'QR scanned. Tap your card to continue.';
     }
 
     if (wsStatus === 'login_device_verify_preparing') {
-      return 'login verified, preparing one-time on-chain device verification...';
+      return 'Login confirmed. Setting up your card...';
     }
     if (wsStatus === 'login_device_verify_challenge') {
-      return 'creating device challenge on card...';
+      return 'Checking your card...';
     }
     if (wsStatus === 'login_device_verify_backend') {
-      return 'submitting card proof to backend...';
+      return 'Finalizing sign-in...';
     }
     if (wsStatus === 'login_device_attestation_request') {
-      return 'requesting on-chain attestation payload...';
+      return 'Preparing sign-in...';
     }
     if (wsStatus === 'login_device_verification_submit') {
-      return 'submitting device verification transaction...';
+      return 'Confirming sign-in...';
     }
     if (wsStatus === 'login_device_verification_receipt') {
-      return 'waiting for device verification confirmation...';
+      return 'Almost done...';
     }
     if (wsStatus === 'login_device_verify_success') {
-      return 'device verification completed. future create/invite flows will be faster.';
+      return 'Sign-in complete.';
     }
     if (wsStatus === 'login_device_verify_failed') {
-      return 'login succeeded, but on-chain device warmup failed. you can still retry later.';
+      return 'Sign-in complete. Some setup steps can be retried later.';
     }
 
     if (wsStatus === 'verified') {
-      return 'Login confirmed';
+      return 'Login successful.';
+    }
+
+    if (wsStatus === 'connecting') {
+      return 'Connecting...';
+    }
+    if (wsStatus === 'connected' || wsStatus === 'qr_ready') {
+      return 'QR ready. Scan with Chainora app.';
+    }
+    if (wsStatus === 'message_error') {
+      return 'Connection interrupted. Please refresh QR.';
+    }
+    if (wsStatus === 'error') {
+      return 'Connection lost. Please refresh QR.';
+    }
+    if (wsStatus === 'closed') {
+      return 'Window closed.';
     }
 
     return null;
@@ -145,7 +183,7 @@ export function HeaderLoginButton() {
           }
 
           if (payload.token && !payload.refreshToken) {
-            setError('Invalid login response: missing refresh token');
+            setError('Could not verify login. Please refresh QR and try again.');
           }
         },
         state => {
@@ -156,7 +194,7 @@ export function HeaderLoginButton() {
       wsRef.current = ws;
     } catch (err) {
       setSession(null);
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(normalizeLoginError(err));
     } finally {
       setLoading(false);
     }
@@ -224,7 +262,7 @@ export function HeaderLoginButton() {
           </button>
 
           {isAvatarMenuOpen ? (
-            <div className="absolute right-0 top-full z-40 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+            <div className="absolute right-0 top-full z-[150] mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
               <Link
                 to="/profile"
                 className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
@@ -284,22 +322,24 @@ export function HeaderLoginButton() {
             </div>
 
             <div className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Session Status</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">{loading ? 'creating_session' : wsStatus}</p>
-              {session ? <p className="mt-1 text-xs text-slate-500">Session: {session.sessionId}</p> : null}
-              {statusMessage ? <p className="mt-2 text-sm font-semibold text-sky-700">{statusMessage}</p> : null}
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Status</p>
+              <p className="mt-2 text-sm font-semibold text-sky-700">
+                {loading ? 'Preparing QR...' : (statusMessage ?? 'Scan QR to continue.')}
+              </p>
             </div>
 
             <div className="mt-5 grid min-h-[280px] place-items-center">
               {isLoginFlowInProgress ? (
                 <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-4 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
-                  qr locked after first scan
+                  QR already scanned.
+                  <br />
+                  Continue on your phone and tap your card.
                 </div>
               ) : qrImageUrl ? (
                 <img src={qrImageUrl} alt="Login QR" className="h-[260px] w-[260px] rounded-xl object-contain ring-1 ring-slate-200" />
               ) : (
                 <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
-                  {loading ? 'Preparing QR...' : 'Unable to create QR'}
+                  {loading ? 'Preparing QR...' : 'Could not create QR. Please refresh.'}
                 </div>
               )}
             </div>

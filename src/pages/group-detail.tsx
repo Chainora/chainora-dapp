@@ -8,6 +8,7 @@ import { PhasePrimaryPanel } from '../features/group-detail/components/PhasePrim
 import { PhaseSupportRail } from '../features/group-detail/components/PhaseSupportRail';
 import { PoolActionQrDialog } from '../features/group-detail/components/PoolActionQrDialog';
 import { PoolTimeline } from '../features/group-detail/components/PoolTimeline';
+import { ToastStack } from '../features/group-detail/components/ToastStack';
 import { compactUiConfig, resolveCompactUiPhase } from '../features/group-detail/compactConfig';
 import { useGroupDetail } from '../features/group-detail/hooks/useGroupDetail';
 
@@ -75,7 +76,7 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
 
   return (
     <section
-      className={`relative mx-auto max-w-6xl -mt-4 ${isCompactViewport ? 'h-[calc(100svh-10.5rem)] overflow-hidden' : 'space-y-4 pb-6'}`}
+      className={`relative mx-auto max-w-6xl -mt-4 ${isCompactViewport ? 'h-[calc(100svh-10.5rem)] overflow-y-auto' : 'space-y-4 pb-6'}`}
     >
       <div className="pointer-events-none absolute inset-x-0 -top-10 -z-10 h-72 bg-[radial-gradient(80%_100%_at_15%_0%,rgba(186,230,253,0.62)_0%,rgba(255,255,255,0)_70%),radial-gradient(60%_85%_at_100%_5%,rgba(254,243,199,0.58)_0%,rgba(255,255,255,0)_70%)]" />
 
@@ -102,8 +103,8 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
           countdownLabel={countdownLabel}
         />
 
-        <div className={isCompactViewport ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-2.5' : 'grid gap-2.5'}>
-          <PoolTimeline activePhase={uiPhase} groupStatus={detail.groupStatus} />
+        <div className={isCompactViewport ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-2.5' : 'grid gap-2.5'}>
+          <PoolTimeline activePhase={uiPhase} groupStatus={detail.groupStatus} activePeriod={detail.activePeriod} />
 
           <div className={`grid gap-2.5 ${isCompactViewport ? 'min-h-0 h-full lg:grid-cols-2' : 'lg:grid-cols-2'}`}>
             <div className={isCompactViewport ? 'min-h-0 h-full' : ''}>
@@ -117,6 +118,7 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
                 isConnected={detail.isConnected}
                 isActing={detail.poolAction.isActing}
                 canProposeInvite={detail.canProposeInvite}
+                canLeaveDuringForming={detail.canLeaveDuringForming}
                 candidateAddress={detail.candidateAddress}
                 canConfirmJoin={detail.canConfirmJoin}
                 confirmJoinLabel={detail.confirmJoinLabel}
@@ -127,6 +129,7 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
                 onBidDiscountChange={detail.setBidDiscountInput}
                 onCandidateAddressChange={detail.setCandidateAddress}
                 onProposeInvite={detail.onProposeInvite}
+                onLeaveDuringForming={detail.onLeaveDuringForming}
                 onRequestJoin={detail.onRequestJoin}
                 onConfirmJoin={detail.onConfirmJoin}
                 onContribute={detail.onContribute}
@@ -152,8 +155,10 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
               />
             </div>
           </div>
-        </div>
 
+          
+        </div>
+{/* <GroupHistoryTable rows={detail.historyRows} /> */}
         {statusMessage ? (
           <p
             className={`rounded-xl px-3 py-2 text-xs font-semibold ${
@@ -172,7 +177,6 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
         actionLabel={detail.poolAction.pendingActionLabel}
         isPreparing={detail.poolAction.isPreparing}
         status={detail.poolAction.status}
-        sessionId={detail.poolAction.sessionId}
         statusMessage={detail.poolAction.statusMessage}
         qrImageUrl={detail.poolAction.qrImageUrl}
         qrLocked={detail.poolAction.qrLocked}
@@ -181,6 +185,7 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
         onClose={detail.poolAction.closeDialog}
         onRefresh={detail.poolAction.refreshQr}
       />
+      <ToastStack toasts={detail.toasts} onDismiss={detail.dismissToast} />
     </section>
   );
 }

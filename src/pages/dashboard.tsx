@@ -9,7 +9,9 @@ import {
   writeJoinedPoolIdCache,
 } from '../features/dashboard/cache';
 import {
+  DASHBOARD_FORCE_SYNC_ONCE_KEY,
   CONTRIBUTION_SYMBOL,
+  DASHBOARD_PREFERRED_MODE_KEY,
   JOINED_FILTER_TIMEOUT_MS,
   JOINED_REFRESH_INTERVAL_MS,
   REFRESH_INTERVAL_MS,
@@ -41,16 +43,43 @@ const toUnixMs = (value: string | undefined): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-const sortDashboardGroups = (groups: ApiGroup[]): ApiGroup[] =>
+type DashboardSortBy = 'created_at' | 'min_reputation';
+type DashboardSortOrder = 'asc' | 'desc';
+
+const toBigIntSafe = (value: string | undefined): bigint => {
+  try {
+    return BigInt(value ?? '0');
+  } catch {
+    return 0n;
+  }
+};
+
+const sortDashboardGroups = (
+  groups: ApiGroup[],
+  sortBy: DashboardSortBy,
+  sortOrder: DashboardSortOrder,
+): ApiGroup[] =>
   [...groups].sort((left, right) => {
-    const updatedDelta = toUnixMs(right.updatedAt) - toUnixMs(left.updatedAt);
+    const direction = sortOrder === 'asc' ? 1 : -1;
+
+    if (sortBy === 'min_reputation') {
+      const leftValue = toBigIntSafe(left.minReputation);
+      const rightValue = toBigIntSafe(right.minReputation);
+      if (leftValue !== rightValue) {
+        return leftValue > rightValue ? direction : -direction;
+      }
+    } else {
+      const createdDelta = toUnixMs(left.createdAt) - toUnixMs(right.createdAt);
+      if (createdDelta !== 0) {
+        return createdDelta * direction;
+      }
+    }
+
+    const updatedDelta = toUnixMs(left.updatedAt) - toUnixMs(right.updatedAt);
     if (updatedDelta !== 0) {
-      return updatedDelta;
+      return updatedDelta * direction;
     }
-    const createdDelta = toUnixMs(right.createdAt) - toUnixMs(left.createdAt);
-    if (createdDelta !== 0) {
-      return createdDelta;
-    }
+
     return left.poolId.localeCompare(right.poolId);
   });
 
@@ -62,11 +91,27 @@ export function DashboardPage() {
   const [groups, setGroups] = useState<ApiGroup[]>([]);
   const [mode, setMode] = useState<DashboardMode>('public');
   const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState<DashboardSortBy>('created_at');
+  const [sortOrder, setSortOrder] = useState<DashboardSortOrder>('desc');
+  const [minReputationFilter, setMinReputationFilter] = useState('');
+  const [maxReputationFilter, setMaxReputationFilter] = useState('');
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [error, setError] = useState('');
   const loadSeqRef = useRef(0);
-  const latestLoadKeyRef = useRef('');
+  const hydratedLoadKeysRef = useRef<Set<string>>(new Set());
+  const forceSyncFirstLoadRef = useRef(false);
   const viewerAddress = useMemo(() => normalizeViewerAddress(address), [address]);
+  const dashboardQueryKey = useMemo(
+    () =>
+      [
+        query.trim().toLowerCase(),
+        sortBy,
+        sortOrder,
+        minReputationFilter.trim(),
+        maxReputationFilter.trim(),
+      ].join('|'),
+    [maxReputationFilter, minReputationFilter, query, sortBy, sortOrder],
+  );
 
   const loadGroups = useCallback(async () => {
     if (!token) {
@@ -74,29 +119,38 @@ export function DashboardPage() {
     }
 
     const normalizedQuery = query.trim();
-    const loadKey = `${mode}:${normalizedQuery.toLowerCase()}:${viewerAddress.toLowerCase()}`;
+    const loadKey = `${mode}:${normalizedQuery.toLowerCase()}:${viewerAddress.toLowerCase()}:${dashboardQueryKey}`;
     const loadSeq = loadSeqRef.current + 1;
     loadSeqRef.current = loadSeq;
-    latestLoadKeyRef.current = loadKey;
 
-    const shouldApply = (): boolean =>
-      loadSeq === loadSeqRef.current && latestLoadKeyRef.current === loadKey;
+    const shouldApply = (): boolean => loadSeq === loadSeqRef.current;
 
     setError('');
 
     try {
-      let accessToken = token;
       let result: ApiGroup[];
       const scope = 'all';
       const visibility: GroupVisibility = mode === 'public' ? 'public' : 'all';
-      const shouldSync = true;
+      const shouldSync = hydratedLoadKeysRef.current.has(loadKey) || forceSyncFirstLoadRef.current;
+
+      const fetchWithToken = async (accessToken: string): Promise<ApiGroup[]> =>
+        fetchGroups(accessToken, scope, normalizedQuery, {
+          sync: shouldSync,
+          visibility,
+          sortBy,
+          sortOrder,
+          minReputation: minReputationFilter.trim(),
+          maxReputation: maxReputationFilter.trim(),
+        });
 
       try {
-        result = await fetchGroups(accessToken, scope, normalizedQuery, { sync: shouldSync, visibility });
+        result = await fetchWithToken(token);
       } catch {
-        accessToken = await refreshSession();
-        result = await fetchGroups(accessToken, scope, normalizedQuery, { sync: shouldSync, visibility });
+        const refreshedToken = await refreshSession();
+        result = await fetchWithToken(refreshedToken);
       }
+      hydratedLoadKeysRef.current.add(loadKey);
+      forceSyncFirstLoadRef.current = false;
 
       if (!shouldApply()) {
         return;
@@ -107,13 +161,26 @@ export function DashboardPage() {
       }
 
       if (mode === 'joined') {
+        const viewerAddressLower = viewerAddress.toLowerCase();
+        const creatorPoolSet = new Set(
+          (viewerAddressLower
+            ? result
+                .filter(group => group.creatorAddress.trim().toLowerCase() === viewerAddressLower)
+                .map(group => group.poolId.toLowerCase())
+            : []),
+        );
         const cacheViewerKey = viewerAddress || address;
         const cachedPoolIds = readJoinedPoolIdCache(cacheViewerKey);
+        const fallbackPoolSet = new Set([
+          ...cachedPoolIds.map(item => item.toLowerCase()),
+          ...creatorPoolSet,
+        ]);
 
-        if (cachedPoolIds.length > 0) {
-          const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
+        if (fallbackPoolSet.size > 0) {
           const quickResult = sortDashboardGroups(
-            result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase())),
+            result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase())),
+            sortBy,
+            sortOrder,
           );
           if (quickResult.length > 0 && shouldApply()) {
             setGroups(previous => (areGroupsEqual(previous, quickResult) ? previous : quickResult));
@@ -121,9 +188,8 @@ export function DashboardPage() {
         }
 
         if (!viewerAddress) {
-          if (cachedPoolIds.length > 0) {
-            const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
-            result = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
+          if (fallbackPoolSet.size > 0) {
+            result = result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()));
           } else {
             result = [];
           }
@@ -140,11 +206,12 @@ export function DashboardPage() {
           }
 
           if (!joinedFilter.timedOut) {
-            result = joinedFilter.groups;
+            const joinedPoolSet = new Set(joinedFilter.groups.map(group => group.poolId.toLowerCase()));
+            creatorPoolSet.forEach(poolId => joinedPoolSet.add(poolId));
+            result = result.filter(group => joinedPoolSet.has(group.poolId.toLowerCase()));
             writeJoinedPoolIdCache(cacheViewerKey, result.map(group => group.poolId));
-          } else if (cachedPoolIds.length > 0) {
-            const cachedPoolSet = new Set(cachedPoolIds.map(item => item.toLowerCase()));
-            result = result.filter(group => cachedPoolSet.has(group.poolId.toLowerCase()));
+          } else if (fallbackPoolSet.size > 0) {
+            result = result.filter(group => fallbackPoolSet.has(group.poolId.toLowerCase()));
           } else {
             result = [];
           }
@@ -155,9 +222,9 @@ export function DashboardPage() {
         return;
       }
 
-      const nextGroups = sortDashboardGroups(result);
+      const nextGroups = sortDashboardGroups(result, sortBy, sortOrder);
       setGroups(previous => (areGroupsEqual(previous, nextGroups) ? previous : nextGroups));
-      writeDashboardGroupCache(mode, query, nextGroups);
+      writeDashboardGroupCache(mode, dashboardQueryKey, nextGroups);
     } catch (loadError) {
       if (!shouldApply()) {
         return;
@@ -170,15 +237,43 @@ export function DashboardPage() {
       }
       setHasLoadedOnce(true);
     }
-  }, [address, mode, publicClient, query, refreshSession, token, viewerAddress]);
+  }, [
+    address,
+    dashboardQueryKey,
+    maxReputationFilter,
+    minReputationFilter,
+    mode,
+    publicClient,
+    query,
+    refreshSession,
+    sortBy,
+    sortOrder,
+    token,
+    viewerAddress,
+  ]);
 
   useEffect(() => {
-    const cached = readDashboardGroupCache(mode, query);
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const preferredMode = window.sessionStorage.getItem(DASHBOARD_PREFERRED_MODE_KEY);
+    if (preferredMode === 'public' || preferredMode === 'joined') {
+      setMode(preferredMode);
+    }
+    const shouldForceSync = window.sessionStorage.getItem(DASHBOARD_FORCE_SYNC_ONCE_KEY) === '1';
+    forceSyncFirstLoadRef.current = shouldForceSync;
+    window.sessionStorage.removeItem(DASHBOARD_PREFERRED_MODE_KEY);
+    window.sessionStorage.removeItem(DASHBOARD_FORCE_SYNC_ONCE_KEY);
+  }, []);
+
+  useEffect(() => {
+    const cached = readDashboardGroupCache(mode, dashboardQueryKey);
     if (cached && cached.length > 0) {
-      const sortedCached = sortDashboardGroups(cached);
+      const sortedCached = sortDashboardGroups(cached, sortBy, sortOrder);
       setGroups(previous => (areGroupsEqual(previous, sortedCached) ? previous : sortedCached));
     }
-  }, [mode, query]);
+  }, [dashboardQueryKey, mode, sortBy, sortOrder]);
 
   useEffect(() => {
     let cancelled = false;
@@ -293,6 +388,36 @@ export function DashboardPage() {
           onChange={event => setQuery(event.target.value)}
           placeholder="Search by name, pool id, or pool address"
           className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+        />
+        <select
+          value={sortBy}
+          onChange={event => setSortBy(event.target.value as DashboardSortBy)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+        >
+          <option value="created_at">Sort: Created Time</option>
+          <option value="min_reputation">Sort: Min Reputation</option>
+        </select>
+        <select
+          value={sortOrder}
+          onChange={event => setSortOrder(event.target.value as DashboardSortOrder)}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+        >
+          <option value="desc">Order: Desc</option>
+          <option value="asc">Order: Asc</option>
+        </select>
+        <input
+          value={minReputationFilter}
+          onChange={event => setMinReputationFilter(event.target.value.replace(/[^\d]/g, ''))}
+          inputMode="numeric"
+          placeholder="Min rep"
+          className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+        />
+        <input
+          value={maxReputationFilter}
+          onChange={event => setMaxReputationFilter(event.target.value.replace(/[^\d]/g, ''))}
+          inputMode="numeric"
+          placeholder="Max rep"
+          className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
         />
         <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1">
           <button

@@ -105,28 +105,26 @@ export const toUsernameLabel = (username: string): string => {
 export const mapPoolActionStatusMessage = (status: string): string => {
   switch (status) {
     case 'awaiting_card_scan':
-      return 'QR scanned on mobile. Tap NFC card to continue.';
+      return 'QR scanned. Tap your card to continue.';
     case 'pool_action_signing_tx':
-      return 'Signing transaction on card...';
+      return 'Signing your request...';
     case 'pool_action_waiting_receipt':
-      return 'Waiting for on-chain confirmation... Transaction is already submitted and cannot be cancelled.';
-    case 'pool_action_pending_confirmation':
-      return 'Transaction submitted. Chain confirmation is pending because RPC is slow.';
+      return 'Almost done. Confirming your request...';
     case 'pool_action_success':
-      return 'Transaction confirmed on-chain.';
+      return 'Done. Action completed successfully.';
     case 'pool_action_failed':
-      return 'Mobile signing failed. Refresh QR to retry.';
+      return 'Could not complete this action. Refresh QR and try again.';
     case 'connecting':
-      return 'Connecting websocket...';
+      return 'Connecting...';
     case 'connected':
     case 'qr_ready':
-      return 'QR ready. Scan with native wallet.';
+      return 'QR ready. Scan with Chainora app.';
     case 'message_error':
-      return 'Received invalid websocket payload.';
+      return 'Connection interrupted. Please refresh QR.';
     case 'error':
-      return 'Websocket error. Refresh QR to continue.';
+      return 'Connection lost. Please refresh QR.';
     case 'closed':
-      return 'Session closed.';
+      return 'Window closed.';
     default:
       return 'Scan QR to sign this action.';
   }
@@ -140,7 +138,6 @@ export const shouldLockPoolActionQr = (status: string): boolean => {
   return (
     status === 'pool_action_signing_tx'
     || status === 'pool_action_waiting_receipt'
-    || status === 'pool_action_pending_confirmation'
   );
 };
 

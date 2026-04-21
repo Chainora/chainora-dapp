@@ -30,7 +30,7 @@ const toneByMemberState = (state: string): 'success' | 'warning' | 'info' | 'mut
   if (['paid', 'best_bidder', 'recipient_claimed', 'completed', 'vote_continue'].includes(state)) {
     return 'success';
   }
-  if (['unpaid', 'recipient_pending', 'pending_finalize', 'vote_end'].includes(state)) {
+  if (['unpaid', 'recipient_pending', 'vote_end'].includes(state)) {
     return 'warning';
   }
   if (['eligible', 'waiting_turn', 'vote_pending'].includes(state)) {
@@ -39,16 +39,16 @@ const toneByMemberState = (state: string): 'success' | 'warning' | 'info' | 'mut
   return 'muted';
 };
 
+const avatarInitial = (label: string): string => {
+  const normalized = label.trim();
+  return normalized ? normalized[0].toUpperCase() : '?';
+};
+
 const resolveMemberBadgeLabel = (params: {
   uiPhase: CompactUiPhase;
   memberBadge: string | undefined;
   memberState: string;
 }): string | null => {
-  if (params.uiPhase === 'ending' && params.memberState === 'pending_finalize') {
-    const endingLabel = (params.memberBadge ?? '').trim();
-    return endingLabel || null;
-  }
-
   const rawLabel = params.memberBadge || params.memberState;
   if (params.uiPhase === 'forming' && rawLabel.trim().toLowerCase() === 'unpaid') {
     return null;
@@ -119,18 +119,39 @@ export function PhaseSupportRail({
 
               return (
                 <div key={member.address} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="min-w-0">
-                    <OverflowSlider
-                      value={`${member.displayLabel}${member.isCurrentUser ? ' (You)' : ''}`}
-                      className="text-xs font-semibold text-slate-900"
-                    />
-                    <OverflowSlider value={member.secondaryLabel} className="text-[11px] text-slate-500" />
-                    {uiPhase === 'bidding' ? (
+                  <div className="min-w-0 flex items-center gap-2">
+                    <div
+                      className="group relative shrink-0"
+                      title={`Reputation: ${member.reputationScore || '0'} | Joined groups: ${String(member.joinedGroupsCount ?? 0)}`}
+                    >
+                      {member.avatarUrl ? (
+                        <img
+                          src={member.avatarUrl}
+                          alt={`${member.displayLabel} avatar`}
+                          className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200"
+                        />
+                      ) : (
+                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                          {avatarInitial(member.displayLabel)}
+                        </span>
+                      )}
+                      <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] text-white shadow-md group-hover:block">
+                        Rep {member.reputationScore || '0'} | Joined {String(member.joinedGroupsCount ?? 0)}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
                       <OverflowSlider
-                        value={member.bidAmountRaw ? `Bid: ${member.bidAmountRaw}` : 'Bid: no bid yet'}
-                        className="text-[11px] text-slate-600"
+                        value={`${member.displayLabel}${member.isCurrentUser ? ' (You)' : ''}`}
+                        className="text-xs font-semibold text-slate-900"
                       />
-                    ) : null}
+                      <OverflowSlider value={member.secondaryLabel} className="text-[11px] text-slate-500" />
+                      {uiPhase === 'bidding' ? (
+                        <OverflowSlider
+                          value={member.bidAmountRaw ? `Bid: ${member.bidAmountRaw}` : 'Bid: no bid yet'}
+                          className="text-[11px] text-slate-600"
+                        />
+                      ) : null}
+                    </div>
                   </div>
                   {badgeLabel ? <StatusBadge label={badgeLabel} tone={toneByMemberState(member.state)} /> : null}
                 </div>

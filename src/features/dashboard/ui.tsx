@@ -158,6 +158,8 @@ export function DashboardGroupCard({
         <p>
           Cycle {group.currentCycle} / Period {group.currentPeriod}
         </p>
+        <p>Min rep: {group.minReputation || '0'}</p>
+        <p>Created: {new Date(group.createdAt).toLocaleDateString()}</p>
       </div>
 
       <div className="mt-4">

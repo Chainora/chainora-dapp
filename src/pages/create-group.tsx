@@ -20,12 +20,18 @@ import {
   shouldLockCreatePoolQr,
 } from '../features/create-group/status';
 import {
+  DASHBOARD_FORCE_SYNC_ONCE_KEY,
+  DASHBOARD_PREFERRED_MODE_KEY,
+} from '../features/dashboard/constants';
+import {
   BasicInfoSection,
   ContractSummarySection,
   FinancialSection,
   TimingSection,
 } from '../features/create-group/sections';
 import { CreateGroupReviewDialog } from '../features/create-group/reviewDialog';
+import { ToastStack } from '../features/group-detail/components/ToastStack';
+import type { UiToast } from '../features/group-detail/types';
 import type {
   DurationForm,
   FieldErrors,
@@ -35,6 +41,32 @@ import { useAuthFetch } from '../hooks/useAuthFetch';
 import { uploadMediaImage } from '../services/mediaService';
 import { buildQrImageUrl, buildQrPayload } from '../services/qrFlow';
 import { createQrSession, openQrSessionSocket, type QrSessionResponse, type QrSessionWsEvent } from '../services/qrSessionFlow';
+
+const normalizeCreateGroupError = (raw: string, fallback: string): string => {
+  const message = String(raw ?? '').trim();
+  if (!message) {
+    return fallback;
+  }
+
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('payload')
+    || lower.includes('session')
+    || lower.includes('websocket')
+    || lower.includes('rpc')
+    || lower.includes('tx')
+    || lower.includes('hash')
+    || lower.includes('nonce')
+    || lower.includes('sequence')
+    || lower.includes('selector')
+    || lower.includes('invalid parameters')
+    || lower.includes('status')
+  ) {
+    return fallback;
+  }
+
+  return message;
+};
 
 export function CreateGroupPage() {
   const navigate = useNavigate();
@@ -51,8 +83,11 @@ export function CreateGroupPage() {
   const [reviewWsStatus, setReviewWsStatus] = useState('idle');
   const [reviewDialogError, setReviewDialogError] = useState('');
   const [isPreparingReviewSession, setIsPreparingReviewSession] = useState(false);
+  const [toasts, setToasts] = useState<UiToast[]>([]);
   const reviewWsRef = useRef<WebSocket | null>(null);
   const hasAutoNavigatedAfterSuccessRef = useRef(false);
+  const toastCounterRef = useRef(1);
+  const lastToastKeyRef = useRef('');
 
   const amountPerPeriod = Number(form.amountPerPeriod || '0');
   const members = Number(form.targetMembers || '0');
@@ -84,7 +119,6 @@ export function CreateGroupPage() {
         groupName: reviewInput.name,
         groupDescription: reviewInput.description,
         groupImageUrl: reviewInput.groupImageUrl?.trim() || undefined,
-        creatorAddress: creatorEVMAddress,
         publicRecruitment: reviewInput.groupVisibility === 'public',
         minReputationScore: reviewInput.minReputationScore,
         authToken: token,
@@ -102,7 +136,7 @@ export function CreateGroupPage() {
         },
       },
     });
-  }, [creatorEVMAddress, reviewInput, reviewSession, token]);
+  }, [reviewInput, reviewSession, token]);
 
   const qrImageUrl = useMemo(() => buildQrImageUrl(reviewPayload, 420), [reviewPayload]);
   const reviewStatusMessage = useMemo(() => mapCreatePoolStatusMessage(reviewWsStatus), [reviewWsStatus]);
@@ -191,6 +225,30 @@ export function CreateGroupPage() {
     reviewWsRef.current = null;
   }, []);
 
+  const dismissToast = useCallback((id: number) => {
+    setToasts(previous => previous.filter(item => item.id !== id));
+  }, []);
+
+  const pushToast = useCallback((tone: UiToast['tone'], message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed) {
+      return;
+    }
+    const id = toastCounterRef.current;
+    toastCounterRef.current += 1;
+    setToasts(previous => [...previous, { id, tone, message: trimmed }]);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setToasts(previous => previous.filter(item => item.id !== id));
+      }, 5000);
+    }
+  }, []);
+
+  const reportReviewError = useCallback((message: string) => {
+    setReviewDialogError(message);
+    pushToast('error', message);
+  }, [pushToast]);
+
   const extractWsErrorText = useCallback((payload: QrSessionWsEvent): string => {
     const source = payload as Record<string, unknown>;
     const keys = ['error', 'errorMessage', 'reason', 'message', 'detail', 'details'];
@@ -208,7 +266,8 @@ export function CreateGroupPage() {
       return;
     }
     if (!creatorEVMAddress) {
-      setReviewDialogError('Session address invalid, please login again.');
+      const message = 'Please log in again to continue.';
+      reportReviewError(message);
       setReviewWsStatus('error');
       return;
     }
@@ -231,40 +290,53 @@ export function CreateGroupPage() {
         chainoraApiBase,
         session.sessionId,
         (payload: QrSessionWsEvent) => {
-          const nextStatus = String(payload?.status ?? '').trim();
-          if (!nextStatus) {
+          const rawStatus = String(payload?.status ?? '').trim();
+          if (!rawStatus) {
             return;
           }
 
+          const nextStatus = rawStatus === 'create_pool_pending_confirmation'
+            ? 'create_pool_waiting_receipt'
+            : rawStatus;
           setReviewWsStatus(nextStatus);
           const wsError = extractWsErrorText(payload);
           if (nextStatus === 'create_pool_failed') {
-            setReviewDialogError(
-              wsError
-                || 'Create-pool failed on mobile app. Check native app error details and refresh QR to retry.',
+            const message = normalizeCreateGroupError(
+              wsError,
+              'Could not create group. Refresh QR and try again.',
             );
+            setReviewDialogError(message);
           }
         },
         state => {
-          setReviewWsStatus(current => (state === 'closed' && current === 'create_pool_success' ? current : state));
+          setReviewWsStatus(current => (
+            state === 'closed' && current === 'create_pool_success'
+              ? current
+              : state
+          ));
           if (state === 'message_error') {
-            setReviewDialogError('Received invalid websocket payload.');
+            const message = 'Connection interrupted. Please refresh QR.';
+            reportReviewError(message);
           } else if (state === 'error') {
-            setReviewDialogError('Websocket error. Please refresh QR and retry.');
+            const message = 'Connection lost. Please refresh QR.';
+            reportReviewError(message);
           }
         },
       );
 
       reviewWsRef.current = ws;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to create signing session';
-      setReviewDialogError(message);
+      const message = normalizeCreateGroupError(
+        error instanceof Error ? error.message : '',
+        'Could not prepare QR. Please try again.',
+      );
+      reportReviewError(message);
       setReviewSession(null);
       setReviewWsStatus('error');
     } finally {
       setIsPreparingReviewSession(false);
     }
-  }, [creatorEVMAddress, extractWsErrorText, reviewInput]);
+  }, [creatorEVMAddress, extractWsErrorText, reportReviewError, reviewInput]);
 
   useEffect(() => {
     if (!showScanDialog) {
@@ -282,14 +354,44 @@ export function CreateGroupPage() {
   }, []);
 
   useEffect(() => {
+    if (reviewWsStatus === 'create_pool_success') {
+      const key = 'create_pool_success';
+      if (lastToastKeyRef.current !== key) {
+        lastToastKeyRef.current = key;
+        pushToast('success', 'Group created successfully.');
+      }
+      return;
+    }
+
+    if (reviewWsStatus === 'create_pool_failed') {
+      const message = reviewDialogError.trim() || 'Create group failed. Please try again.';
+      const key = `create_pool_failed:${message}`;
+      if (lastToastKeyRef.current !== key) {
+        lastToastKeyRef.current = key;
+        pushToast('error', message);
+      }
+    }
+  }, [pushToast, reviewDialogError, reviewWsStatus]);
+
+  const navigateToDashboardAfterCreate = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      const preferredMode = reviewInput?.groupVisibility === 'private' ? 'joined' : 'public';
+      window.sessionStorage.setItem(DASHBOARD_PREFERRED_MODE_KEY, preferredMode);
+      window.sessionStorage.setItem(DASHBOARD_FORCE_SYNC_ONCE_KEY, '1');
+    }
+
+    void navigate({ to: '/dashboard' });
+  }, [navigate, reviewInput]);
+
+  useEffect(() => {
     if (!showScanDialog || !isCreatePoolSuccess || hasAutoNavigatedAfterSuccessRef.current) {
       return;
     }
 
     hasAutoNavigatedAfterSuccessRef.current = true;
     closeReviewDialog();
-    void navigate({ to: '/dashboard' });
-  }, [closeReviewDialog, isCreatePoolSuccess, navigate, showScanDialog]);
+    navigateToDashboardAfterCreate();
+  }, [closeReviewDialog, isCreatePoolSuccess, navigateToDashboardAfterCreate, showScanDialog]);
 
   const onReview = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -300,7 +402,7 @@ export function CreateGroupPage() {
       return;
     }
     if (!creatorEVMAddress) {
-      setSubmitError('Session address invalid, please login again.');
+      setSubmitError('Please log in again to continue.');
       return;
     }
 
@@ -352,7 +454,6 @@ export function CreateGroupPage() {
 
       <CreateGroupReviewDialog
         open={showScanDialog}
-        reviewWsStatus={reviewWsStatus}
         reviewStatusMessage={reviewStatusMessage}
         isPreparingReviewSession={isPreparingReviewSession}
         isReviewQrLocked={isReviewQrLocked}
@@ -365,9 +466,10 @@ export function CreateGroupPage() {
         }}
         onDone={() => {
           closeReviewDialog();
-          void navigate({ to: '/dashboard' });
+          navigateToDashboardAfterCreate();
         }}
       />
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </section>
   );
 }

@@ -7,41 +7,41 @@ export const CREATE_POOL_QR_FEATURE = 'chainora-native-wallet:create-pool';
 export const mapCreatePoolStatusMessage = (status: string): string => {
   switch (status) {
     case 'awaiting_card_scan':
-      return 'QR scanned on mobile. Please tap your NFC card to continue.';
+      return 'QR scanned. Tap your card to continue.';
     case 'create_pool_precheck':
-      return 'Running on-chain pre-check...';
+      return 'Checking group details...';
     case 'create_pool_precheck_timeout_continue':
-      return 'Continuing without full pre-check (fast mode or RPC slow) and signing transaction directly...';
+      return 'Network is busy. Continuing...';
     case 'create_pool_device_verify_challenge':
     case 'create_pool_device_verify_backend':
     case 'create_pool_device_attestation_request':
-      return 'Preparing one-time device verification...';
+      return 'Verifying your card...';
     case 'create_pool_device_verification_submit':
     case 'create_pool_device_verification_receipt':
-      return 'Confirming one-time device verification transaction...';
+      return 'Finishing card verification...';
     case 'create_pool_signing_tx':
-      return 'Signing create-pool transaction on card...';
+      return 'Signing your create-group request...';
     case 'create_pool_waiting_receipt':
-      return 'Waiting for create-pool transaction confirmation... Transaction is already submitted and cannot be cancelled.';
+      return 'Almost done. Confirming your group...';
     case 'create_pool_syncing_backend':
-      return 'Syncing created group to backend...';
+      return 'Saving your group...';
     case 'create_pool_success':
-      return 'Create-pool completed. You can open dashboard now.';
+      return 'Group created successfully.';
     case 'create_pool_failed':
-      return 'Create-pool failed on mobile. Check native app error and refresh QR to retry.';
+      return 'Could not create group. Refresh QR and try again.';
     case 'connecting':
-      return 'Connecting websocket...';
+      return 'Connecting...';
     case 'connected':
     case 'qr_ready':
-      return 'QR ready. Scan with native wallet.';
+      return 'QR ready. Scan with Chainora app.';
     case 'message_error':
-      return 'Received invalid websocket payload.';
+      return 'Connection interrupted. Please refresh QR.';
     case 'error':
-      return 'Websocket error. Refresh QR to continue.';
+      return 'Connection lost. Please refresh QR.';
     case 'closed':
-      return 'Session closed.';
+      return 'Window closed.';
     default:
-      return 'Scan QR to start create-pool signing flow.';
+      return 'Scan QR to create your group.';
   }
 };
 

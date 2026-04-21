@@ -11,6 +11,7 @@ type UseGroupPhaseViewQueryParams = {
   enabled: boolean;
   refreshSession: () => Promise<string>;
   activeSelectionHint: boolean;
+  sync: boolean;
 };
 
 const isDocumentVisible = (): boolean => {
@@ -46,6 +47,7 @@ export const useGroupPhaseViewQuery = ({
   enabled,
   refreshSession,
   activeSelectionHint,
+  sync,
 }: UseGroupPhaseViewQueryParams) => {
   return useQuery({
     queryKey: ['group-phase-view', poolId],
@@ -73,7 +75,7 @@ export const useGroupPhaseViewQuery = ({
     },
     queryFn: () => loadGroupPhaseView(accessToken, refreshSession, {
       poolId,
-      sync: activeSelectionHint,
+      sync,
     }),
   });
 };

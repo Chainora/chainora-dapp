@@ -7,3 +7,5 @@ export const JOINED_FILTER_TIMEOUT_MS = 3_500;
 
 export const DASHBOARD_GROUP_CACHE_KEY_PREFIX = 'chainora:dashboard:groups:v1';
 export const DASHBOARD_JOINED_POOL_CACHE_KEY_PREFIX = 'chainora:dashboard:joined-pools:v1';
+export const DASHBOARD_PREFERRED_MODE_KEY = 'chainora:dashboard:preferred-mode:v1';
+export const DASHBOARD_FORCE_SYNC_ONCE_KEY = 'chainora:dashboard:force-sync-once:v1';

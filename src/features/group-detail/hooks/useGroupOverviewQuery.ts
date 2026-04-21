@@ -7,18 +7,20 @@ type UseGroupOverviewQueryParams = {
   accessToken: string;
   enabled: boolean;
   refreshSession: () => Promise<string>;
+  sync: boolean;
 };
 
 const loadGroupOverview = async (
   poolId: string,
   accessToken: string,
   refreshSession: () => Promise<string>,
+  sync: boolean,
 ): Promise<ApiGroup> => {
   try {
-    return await fetchGroupByPoolId(accessToken, poolId, { sync: false });
+    return await fetchGroupByPoolId(accessToken, poolId, { sync });
   } catch {
     const nextToken = await refreshSession();
-    return fetchGroupByPoolId(nextToken, poolId, { sync: false });
+    return fetchGroupByPoolId(nextToken, poolId, { sync });
   }
 };
 
@@ -27,6 +29,7 @@ export const useGroupOverviewQuery = ({
   accessToken,
   enabled,
   refreshSession,
+  sync,
 }: UseGroupOverviewQueryParams) => {
   return useQuery({
     queryKey: ['group-detail', poolId],
@@ -36,6 +39,6 @@ export const useGroupOverviewQuery = ({
     refetchOnReconnect: false,
     retry: false,
     refetchInterval: false,
-    queryFn: () => loadGroupOverview(poolId, accessToken, refreshSession),
+    queryFn: () => loadGroupOverview(poolId, accessToken, refreshSession, sync),
   });
 };

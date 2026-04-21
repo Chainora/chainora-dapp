@@ -4,6 +4,7 @@ export type AuthProfile = {
   address: string;
   username: string;
   avatarUrl: string;
+  reputationScore?: string;
   tCNR: string;
   kycStatus: string;
 };
@@ -12,6 +13,8 @@ export type BasicProfile = {
   address: string;
   username: string;
   avatarUrl: string;
+  reputationScore?: string;
+  joinedGroupsCount?: number;
 };
 
 type Envelope<T> = T | { success?: boolean; data?: T };
@@ -147,6 +150,10 @@ export const fetchBasicProfilesByAddresses = async (
     address: String(item.address ?? '').trim(),
     username: String(item.username ?? '').trim(),
     avatarUrl: String(item.avatarUrl ?? '').trim(),
+    reputationScore: String(item.reputationScore ?? '0').trim() || '0',
+    joinedGroupsCount: Number.isFinite(Number(item.joinedGroupsCount ?? 0))
+      ? Number(item.joinedGroupsCount ?? 0)
+      : 0,
   }));
 };
 
@@ -193,5 +200,9 @@ export const fetchBasicProfilesByUsernames = async (
     address: String(item.address ?? '').trim(),
     username: String(item.username ?? '').trim(),
     avatarUrl: String(item.avatarUrl ?? '').trim(),
+    reputationScore: String(item.reputationScore ?? '0').trim() || '0',
+    joinedGroupsCount: Number.isFinite(Number(item.joinedGroupsCount ?? 0))
+      ? Number(item.joinedGroupsCount ?? 0)
+      : 0,
   }));
 };

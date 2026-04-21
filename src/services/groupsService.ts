@@ -12,6 +12,7 @@ export type ApiGroup = {
   groupImageUrl: string;
   publicRecruitment: boolean;
   contributionAmount: string;
+  minReputation?: string;
   targetMembers: number;
   periodDuration: number;
   contributionWindow: number;
@@ -79,6 +80,29 @@ export type ApiGroupViewPhaseMeta = {
   countdownLabel: string;
 };
 
+export type ApiGroupViewRuntimeMeta = {
+  storedPeriodStatus: number;
+  contributionDeadline: number;
+  auctionDeadline: number;
+  payoutDeadline: number;
+  extendVoteDeadline: number;
+  auctionReady: boolean;
+  auctionCloseReady: boolean;
+  finalizeReady: boolean;
+  defaultPending: boolean;
+  extendVoteExpired: boolean;
+};
+
+export type ApiGroupViewHistoryRow = {
+  cycle: number;
+  period: number;
+  member: string;
+  contributed: boolean;
+  bidAmount: string;
+  claimed: boolean;
+  claimAmount: string;
+};
+
 export type ApiGroupViewMemberState = {
   address: string;
   isCurrentUser: boolean;
@@ -108,6 +132,8 @@ export type ApiGroupDetailView = {
   selection: ApiGroupViewSelection;
   periodMeta: ApiGroupViewPeriodMeta;
   phaseMeta: ApiGroupViewPhaseMeta;
+  runtime: ApiGroupViewRuntimeMeta;
+  historyRows: ApiGroupViewHistoryRow[];
   memberStates: ApiGroupViewMemberState[];
   permissions: ApiGroupViewPermissions;
   userClaimState: ApiGroupViewUserClaimState;
@@ -123,6 +149,7 @@ export type CreateGroupPayload = {
   groupImageUrl?: string;
   publicRecruitment?: boolean;
   contributionAmount: string;
+  minReputation?: string;
   targetMembers: number;
   periodDuration: number;
   contributionWindow: number;
@@ -163,9 +190,11 @@ const normalizePublicRecruitment = (value: unknown): boolean => {
 const normalizeGroupRecord = (value: unknown): ApiGroup => {
   const group = value as Record<string, unknown>;
   const rawVisibility = group.publicRecruitment ?? group.public_recruitment;
+  const rawMinReputation = group.minReputation ?? group.min_reputation;
   return {
     ...(group as ApiGroup),
     publicRecruitment: normalizePublicRecruitment(rawVisibility),
+    minReputation: typeof rawMinReputation === 'string' ? rawMinReputation : String(rawMinReputation ?? '0'),
   };
 };
 
@@ -185,6 +214,10 @@ export const fetchGroups = async (
   options?: {
     sync?: boolean;
     visibility?: GroupVisibility;
+    sortBy?: 'created_at' | 'min_reputation';
+    sortOrder?: 'asc' | 'desc';
+    minReputation?: string;
+    maxReputation?: string;
   },
 ): Promise<ApiGroup[]> => {
   const params = new URLSearchParams();
@@ -197,6 +230,18 @@ export const fetchGroups = async (
   }
   if (options?.visibility && options.visibility !== 'all') {
     params.set('visibility', options.visibility);
+  }
+  if (options?.sortBy) {
+    params.set('sortBy', options.sortBy);
+  }
+  if (options?.sortOrder) {
+    params.set('sortOrder', options.sortOrder);
+  }
+  if (typeof options?.minReputation === 'string' && options.minReputation.trim() !== '') {
+    params.set('minReputation', options.minReputation.trim());
+  }
+  if (typeof options?.maxReputation === 'string' && options.maxReputation.trim() !== '') {
+    params.set('maxReputation', options.maxReputation.trim());
   }
 
   const response = await fetch(

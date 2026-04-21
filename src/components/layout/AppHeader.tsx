@@ -5,7 +5,7 @@ import { NotificationBell } from './NotificationBell';
 
 export function AppHeader() {
   return (
-    <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
+    <header className="relative z-[140] border-b border-slate-200 bg-white/90 backdrop-blur">
       <nav className="mx-auto flex max-w-6xl items-center px-6 py-4 text-sm">
         <Link
           to="/"
