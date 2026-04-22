@@ -1096,14 +1096,6 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     triggerAction,
   ]);
 
-  const onCloseAuction = useCallback(() => {
-    triggerAction({
-      actionKey: 'sync_runtime_after_auction',
-      label: 'sync runtime',
-      functionName: 'syncRuntime',
-    });
-  }, [triggerAction]);
-
   const onClaimPayout = useCallback(() => {
     triggerAction({ actionKey: 'claim_payout', label: 'claim payout', functionName: 'claimPayout' });
   }, [triggerAction]);
@@ -1519,7 +1511,6 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     onRefresh,
     onContribute,
     onSubmitBid,
-    onCloseAuction,
     onClaimPayout,
     onFinalizePeriod,
     onVoteContinue,

@@ -36,7 +36,6 @@ export function PhasePrimaryPanel({
   onRequestJoin,
   onContribute,
   onSubmitBid,
-  onCloseAuction,
   onClaim,
   onFinalize,
   onVoteContinue,
@@ -67,7 +66,6 @@ export function PhasePrimaryPanel({
   onRequestJoin: () => void;
   onContribute: () => void;
   onSubmitBid: () => void;
-  onCloseAuction: () => void;
   onClaim: () => void;
   onFinalize: () => void;
   onVoteContinue: () => void;
@@ -197,11 +195,6 @@ export function PhasePrimaryPanel({
 
   if (uiPhase === 'bidding') {
     const canPrimaryBid = permissions.canBid;
-    const canPrimaryClose = !canPrimaryBid && permissions.canCloseAuction;
-    const canDoPrimary = canPrimaryBid || canPrimaryClose;
-    const primaryLabel = canPrimaryBid ? 'Submit Bid' : 'Sync Runtime';
-    const onPrimaryClick = canPrimaryBid ? onSubmitBid : onCloseAuction;
-    const isSyncRuntimeState = canPrimaryClose;
 
     return (
       <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
@@ -210,9 +203,7 @@ export function PhasePrimaryPanel({
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
         </div>
         <p className="mt-2 text-sm text-slate-600">
-          {isSyncRuntimeState
-            ? 'Auction window ended. Sync runtime to move to payout.'
-            : 'Submit your discount bid for this period auction.'}
+          Submit your discount bid for this period auction.
         </p>
 
         {canPrimaryBid ? (
@@ -236,14 +227,14 @@ export function PhasePrimaryPanel({
         <div className="mt-auto space-y-2">
           <button
             type="button"
-            disabled={!canDoPrimary || isActing}
-            onClick={onPrimaryClick}
-            title={!canDoPrimary ? permissions.disabledReason : undefined}
+            disabled={!canPrimaryBid || isActing}
+            onClick={onSubmitBid}
+            title={!canPrimaryBid ? permissions.disabledReason : undefined}
             className={`w-full ${primaryButtonClass}`}
           >
-            {isActing ? 'Preparing...' : primaryLabel}
+            {isActing ? 'Preparing...' : 'Submit Bid'}
           </button>
-          {!canDoPrimary && permissions.disabledReason ? (
+          {!canPrimaryBid && permissions.disabledReason ? (
             <p className="text-xs text-slate-500">{permissions.disabledReason}</p>
           ) : null}
         </div>

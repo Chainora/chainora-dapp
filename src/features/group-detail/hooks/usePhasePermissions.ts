@@ -48,25 +48,9 @@ export const usePhasePermissions = ({
     const isReadOnlySelection = isHistoricalView || isFutureView || !isCurrentActivePhase;
 
     const canContribute = Boolean(permissions?.canContribute && isCurrentActivePhase);
-    const nowUnix = Math.floor(Date.now() / 1000);
-    const runtimeCollectingSyncToPayout = Boolean(
-      runtime
-      && runtime.storedPeriodStatus === 0
-      && runtime.allActiveContributed
-      && runtime.contributionDeadline > 0
-      && nowUnix >= runtime.contributionDeadline
-      && !runtime.auctionReady,
-    );
-    const runtimeAuctionSyncToPayout = Boolean(
-      runtime
-      && runtime.storedPeriodStatus === 1
-      && runtime.auctionDeadline > 0
-      && nowUnix >= runtime.auctionDeadline,
-    );
-    const shouldForceSyncRuntime = isCurrentActivePhase
-      && (runtimeCollectingSyncToPayout || runtimeAuctionSyncToPayout);
-
-    const canBid = shouldForceSyncRuntime
+    const syncAction = runtime?.syncAction ?? 0;
+    const isPayoutTransition = syncAction === 3 || syncAction === 4;
+    const canBid = isPayoutTransition
       ? false
       : Boolean(permissions?.canBid && isCurrentActivePhase);
     const canClaim = Boolean(permissions?.canClaim && isCurrentActivePhase);
@@ -75,9 +59,8 @@ export const usePhasePermissions = ({
     const canVoteEnd = Boolean(permissions?.canVoteExtend && isCurrentActivePhase);
     const canClaimYield = Boolean(permissions?.canClaimYield);
 
-    const canCloseAuction = shouldForceSyncRuntime
-      ? true
-      : Boolean(permissions?.canCloseAuction && isCurrentActivePhase);
+    // Bidding no longer exposes manual sync-runtime CTA in the new runtime model.
+    const canCloseAuction = false;
 
     const canRequestJoin = Boolean(
       groupStatus === 'forming' &&
@@ -123,14 +106,9 @@ export const usePhasePermissions = ({
   }, [
     group,
     isViewerMember,
-    runtime?.allActiveContributed,
-    runtime?.auctionDeadline,
-    runtime?.auctionReady,
-    runtime?.contributionDeadline,
-    runtime?.storedPeriodStatus,
+    runtime?.syncAction,
     permissions?.canBid,
     permissions?.canClaim,
-    permissions?.canCloseAuction,
     permissions?.canClaimYield,
     permissions?.canContribute,
     permissions?.canFinalize,

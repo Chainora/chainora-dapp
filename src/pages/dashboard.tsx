@@ -11,17 +11,21 @@ import {
   writeJoinedPoolIdCache,
 } from '../features/dashboard/cache';
 import {
-  DASHBOARD_EMPTY_RESULT_SYNC_STREAK_THRESHOLD,
   DASHBOARD_FORCE_SYNC_ONCE_KEY,
-  DASHBOARD_GROUP_CACHE_STALE_MS,
-  DASHBOARD_HIDDEN_CHECK_INTERVAL_MS,
+  DASHBOARD_JOINED_EMPTY_RESULT_SYNC_STREAK_THRESHOLD,
+  DASHBOARD_JOINED_GROUP_CACHE_STALE_MS,
   DASHBOARD_JOINED_MEMBERSHIP_REFRESH_TTL_MS,
   DASHBOARD_JOINED_POLL_INTERVAL_MS,
+  DASHBOARD_JOINED_RESUME_SYNC_MIN_GAP_MS,
+  DASHBOARD_JOINED_SYNC_MIN_GAP_MS,
+  DASHBOARD_PUBLIC_EMPTY_RESULT_SYNC_STREAK_THRESHOLD,
+  DASHBOARD_PUBLIC_GROUP_CACHE_STALE_MS,
   CONTRIBUTION_SYMBOL,
   DASHBOARD_PREFERRED_MODE_KEY,
   DASHBOARD_PUBLIC_POLL_INTERVAL_MS,
-  DASHBOARD_RESUME_SYNC_MIN_GAP_MS,
-  DASHBOARD_SYNC_MIN_GAP_MS,
+  DASHBOARD_PUBLIC_RESUME_SYNC_MIN_GAP_MS,
+  DASHBOARD_PUBLIC_SYNC_MIN_GAP_MS,
+  DASHBOARD_SEARCH_DEBOUNCE_MS,
   JOINED_FILTER_TIMEOUT_MS,
 } from '../features/dashboard/constants';
 import { filterJoinedGroupsWithTimeout } from '../features/dashboard/groupMembership';
@@ -128,6 +132,7 @@ export function DashboardPage() {
   const [groups, setGroups] = useState<ApiGroup[]>([]);
   const [mode, setMode] = useState<DashboardMode>('public');
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [sortBy, setSortBy] = useState<DashboardSortBy>('created_at');
   const [sortOrder, setSortOrder] = useState<DashboardSortOrder>('desc');
   const [minReputationFilter, setMinReputationFilter] = useState('');
@@ -145,7 +150,22 @@ export function DashboardPage() {
   const joinedMembershipMetaRef = useRef<Map<string, JoinedMembershipMeta>>(new Map());
 
   const viewerAddress = useMemo(() => normalizeViewerAddress(address), [address]);
-  const normalizedQuery = useMemo(() => query.trim(), [query]);
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      setDebouncedQuery(query);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query);
+    }, DASHBOARD_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  const normalizedQuery = useMemo(() => debouncedQuery.trim(), [debouncedQuery]);
   const normalizedMinReputationFilter = useMemo(() => minReputationFilter.trim(), [minReputationFilter]);
   const normalizedMaxReputationFilter = useMemo(() => maxReputationFilter.trim(), [maxReputationFilter]);
 
@@ -202,12 +222,24 @@ export function DashboardPage() {
       lastAnyFetchAt: 0,
       emptyResultStreak: 0,
     };
+    const syncMinGapMs = mode === 'public'
+      ? DASHBOARD_PUBLIC_SYNC_MIN_GAP_MS
+      : DASHBOARD_JOINED_SYNC_MIN_GAP_MS;
+    const resumeSyncGapMs = mode === 'public'
+      ? DASHBOARD_PUBLIC_RESUME_SYNC_MIN_GAP_MS
+      : DASHBOARD_JOINED_RESUME_SYNC_MIN_GAP_MS;
+    const groupCacheStaleMs = mode === 'public'
+      ? DASHBOARD_PUBLIC_GROUP_CACHE_STALE_MS
+      : DASHBOARD_JOINED_GROUP_CACHE_STALE_MS;
+    const emptyResultSyncStreakThreshold = mode === 'public'
+      ? DASHBOARD_PUBLIC_EMPTY_RESULT_SYNC_STREAK_THRESHOLD
+      : DASHBOARD_JOINED_EMPTY_RESULT_SYNC_STREAK_THRESHOLD;
 
     const cacheEntry = readDashboardGroupCacheEntry(mode, dashboardQueryKey);
     const isCacheFresh = Boolean(
       cacheEntry
       && cacheEntry.cachedAt > 0
-      && (nowMs - cacheEntry.cachedAt) <= DASHBOARD_GROUP_CACHE_STALE_MS,
+      && (nowMs - cacheEntry.cachedAt) <= groupCacheStaleMs,
     );
     const isFirstLoadForKey = loadMeta.lastAnyFetchAt === 0;
 
@@ -217,10 +249,10 @@ export function DashboardPage() {
     } else if (isFirstLoadForKey) {
       shouldSync = !isCacheFresh;
     } else if (reason === 'poll') {
-      shouldSync = (nowMs - loadMeta.lastChainSyncAt) >= DASHBOARD_SYNC_MIN_GAP_MS
-        || loadMeta.emptyResultStreak >= DASHBOARD_EMPTY_RESULT_SYNC_STREAK_THRESHOLD;
+      shouldSync = (nowMs - loadMeta.lastChainSyncAt) >= syncMinGapMs
+        || loadMeta.emptyResultStreak >= emptyResultSyncStreakThreshold;
     } else if (reason === 'resume_visible') {
-      shouldSync = (nowMs - loadMeta.lastChainSyncAt) >= DASHBOARD_RESUME_SYNC_MIN_GAP_MS;
+      shouldSync = (nowMs - loadMeta.lastChainSyncAt) >= resumeSyncGapMs;
     } else {
       shouldSync = !isCacheFresh;
     }
@@ -255,10 +287,6 @@ export function DashboardPage() {
 
       if (!shouldApply()) {
         return;
-      }
-
-      if (mode === 'public') {
-        result = result.filter(group => group.publicRecruitment === true);
       }
 
       if (mode === 'joined') {
@@ -308,7 +336,7 @@ export function DashboardPage() {
           const membershipExpired = !joinedMembershipMeta
             || (nowMs - joinedMembershipMeta.lastVerifiedAt) >= DASHBOARD_JOINED_MEMBERSHIP_REFRESH_TTL_MS;
           const shouldVerifyMembership = result.length > 0
-            && (reason === 'manual' || shouldSync || candidateChanged || membershipExpired || !joinedCacheFresh);
+            && (reason === 'manual' || candidateChanged || membershipExpired || !joinedCacheFresh);
 
           if (shouldVerifyMembership) {
             const joinedFilter = await filterJoinedGroupsWithTimeout(
@@ -454,6 +482,7 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!token) {
+      wasHiddenRef.current = false;
       return;
     }
 
@@ -470,17 +499,11 @@ export function DashboardPage() {
 
       if (!isDocumentVisible()) {
         wasHiddenRef.current = true;
-        scheduleNext(DASHBOARD_HIDDEN_CHECK_INTERVAL_MS);
+        scheduleNext(activeDelay);
         return;
       }
 
-      if (wasHiddenRef.current) {
-        wasHiddenRef.current = false;
-        requestLoad('resume_visible');
-      } else {
-        requestLoad('poll');
-      }
-
+      requestLoad('poll');
       scheduleNext(activeDelay);
     };
 
@@ -502,6 +525,40 @@ export function DashboardPage() {
       }
     };
   }, [mode, requestLoad, token]);
+
+  useEffect(() => {
+    if (!token || typeof document === 'undefined' || typeof window === 'undefined') {
+      return;
+    }
+
+    const triggerResume = () => {
+      if (!isDocumentVisible()) {
+        wasHiddenRef.current = true;
+        return;
+      }
+      if (!wasHiddenRef.current) {
+        return;
+      }
+      wasHiddenRef.current = false;
+      requestLoad('resume_visible');
+    };
+
+    const onVisibilityChange = () => {
+      if (!isDocumentVisible()) {
+        wasHiddenRef.current = true;
+        return;
+      }
+      triggerResume();
+    };
+
+    window.addEventListener('focus', triggerResume);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', triggerResume);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [requestLoad, token]);
 
   const lifecycleStatuses = useMemo(() => groups.map(deriveDashboardGroupStatus), [groups]);
   const activeCount = useMemo(

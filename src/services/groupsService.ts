@@ -82,11 +82,16 @@ export type ApiGroupViewPhaseMeta = {
 
 export type ApiGroupViewRuntimeMeta = {
   storedPeriodStatus: number;
+  syncAction: number;
+  startAt: number;
   contributionDeadline: number;
   auctionDeadline: number;
   payoutDeadline: number;
   extendVoteDeadline: number;
   allActiveContributed: boolean;
+  projectedRecipient: string;
+  projectedDiscount: string;
+  projectedPayoutAmount: string;
   auctionReady: boolean;
   auctionCloseReady: boolean;
   finalizeReady: boolean;

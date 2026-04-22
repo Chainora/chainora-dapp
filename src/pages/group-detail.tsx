@@ -145,7 +145,6 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
                   onConfirmJoin={detail.onConfirmJoin}
                   onContribute={detail.onContribute}
                   onSubmitBid={detail.onSubmitBid}
-                  onCloseAuction={detail.onCloseAuction}
                   onClaim={detail.onClaimPayout}
                   onFinalize={detail.onFinalizePeriod}
                   onVoteContinue={detail.onVoteContinue}
