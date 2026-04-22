@@ -104,41 +104,23 @@ export const toUsernameLabel = (username: string): string => {
 
 export const mapPoolActionStatusMessage = (status: string): string => {
   switch (status) {
-    case 'awaiting_card_scan':
-      return 'QR scanned. Tap your card to continue.';
-    case 'pool_action_signing_tx':
-      return 'Signing your request...';
-    case 'pool_action_waiting_receipt':
-      return 'Almost done. Confirming your request...';
-    case 'pool_action_success':
-      return 'Done. Action completed successfully.';
-    case 'pool_action_failed':
-      return 'Could not complete this action. Refresh QR and try again.';
     case 'connecting':
-      return 'Connecting...';
-    case 'connected':
-    case 'qr_ready':
-      return 'QR ready. Scan with Chainora app.';
-    case 'message_error':
-      return 'Connection interrupted. Please refresh QR.';
+      return 'Connecting wallet session...';
+    case 'awaiting_wallet_approval':
+      return 'Preparing transaction...';
+    case 'awaiting_card':
+      return 'Approve and sign in native app with your card.';
+    case 'broadcasting':
+      return 'Broadcasting transaction and waiting for confirmation...';
+    case 'confirmed':
+      return 'Done. Action completed successfully.';
+    case 'attest_required':
+      return 'Device verification required before this action.';
     case 'error':
-      return 'Connection lost. Please refresh QR.';
-    case 'closed':
-      return 'Window closed.';
+      return 'Could not complete this action. Please try again.';
     default:
-      return 'Scan QR to sign this action.';
+      return 'Ready to sign this action.';
   }
-};
-
-export const shouldLockPoolActionQr = (status: string): boolean => {
-  if (status === 'awaiting_card_scan') {
-    return true;
-  }
-
-  return (
-    status === 'pool_action_signing_tx'
-    || status === 'pool_action_waiting_receipt'
-  );
 };
 
 export const toPoolActionToastMessage = (actionKey: string, fallbackLabel: string): string => {

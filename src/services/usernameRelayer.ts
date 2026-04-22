@@ -8,6 +8,21 @@ export type UnsignedRelayerPayload = {
   message: string;
 };
 
+export type SubmitUsernameRelayerRequest = {
+  sessionId: string;
+  address: string;
+  username: string;
+  signature: string;
+  v?: number;
+};
+
+export type SubmitUsernameRelayerResponse = {
+  accepted: boolean;
+  txHash?: string;
+  address: string;
+  username: string;
+};
+
 const sanitizeRelayerErrorMessage = (raw: string): string => {
   const trimmed = String(raw ?? '').trim();
   if (!trimmed) {
@@ -90,6 +105,37 @@ export type RelayerWSEvent = {
   error?: string;
   username?: string;
   address?: string;
+};
+
+const submitRelayerRequest = async (
+  endpoint: string,
+  payload: SubmitUsernameRelayerRequest,
+): Promise<SubmitUsernameRelayerResponse> => {
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const detail = await readApiErrorMessage(response);
+    throw new Error(detail || `Relayer submit failed: ${response.status}`);
+  }
+
+  const json = (await response.json()) as unknown;
+  return normalizeEnvelope<SubmitUsernameRelayerResponse>(json);
+};
+
+export const submitUsernameRelayerRequest = (payload: SubmitUsernameRelayerRequest): Promise<SubmitUsernameRelayerResponse> => {
+  return submitRelayerRequest(`${chainoraApiBase}/v1/relayer/register`, payload);
+};
+
+export const submitPrimaryUsernameRelayerRequest = (
+  payload: SubmitUsernameRelayerRequest,
+): Promise<SubmitUsernameRelayerResponse> => {
+  return submitRelayerRequest(`${chainoraApiBase}/v1/relayer/primary/select`, payload);
 };
 
 export function openUsernameRelayerSocket(

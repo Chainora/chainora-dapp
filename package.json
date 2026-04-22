@@ -11,6 +11,9 @@
     "typecheck": "yarn router:generate && tsc --noEmit"
   },
   "dependencies": {
+    "@initia/icons-react": "^2.1.0",
+    "@initia/interwovenkit-react": "^2.8.0",
+    "@initia/opinit.proto": "^1.0.3",
     "@tanstack/react-query": "^5.59.0",
     "@tanstack/react-router": "^1.87.0",
     "@tanstack/react-router-devtools": "^1.87.0",

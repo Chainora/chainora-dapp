@@ -7,7 +7,7 @@ import { GroupDetailsHeader } from '../features/group-detail/components/GroupDet
 import { GroupHistoryTable } from '../features/group-detail/components/GroupHistoryTable';
 import { PhasePrimaryPanel } from '../features/group-detail/components/PhasePrimaryPanel';
 import { PhaseSupportRail } from '../features/group-detail/components/PhaseSupportRail';
-import { PoolActionQrDialog } from '../features/group-detail/components/PoolActionQrDialog';
+import { PoolActionWalletDialog } from '../features/group-detail/components/PoolActionWalletDialog';
 import { PoolTimeline } from '../features/group-detail/components/PoolTimeline';
 import { ToastStack } from '../features/group-detail/components/ToastStack';
 import { compactUiConfig, resolveCompactUiPhase } from '../features/group-detail/compactConfig';
@@ -188,7 +188,7 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
         </div>
       </section>
 
-      <PoolActionQrDialog
+      <PoolActionWalletDialog
         isOpen={detail.poolAction.isOpen}
         actionLabel={detail.poolAction.pendingActionLabel}
         isPreparing={detail.poolAction.isPreparing}

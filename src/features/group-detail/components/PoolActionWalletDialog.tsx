@@ -1,4 +1,4 @@
-type PoolActionQrDialogProps = {
+type PoolActionWalletDialogProps = {
   isOpen: boolean;
   actionLabel: string;
   isPreparing: boolean;
@@ -12,19 +12,19 @@ type PoolActionQrDialogProps = {
   onRefresh: () => void;
 };
 
-export function PoolActionQrDialog({
+export function PoolActionWalletDialog({
   isOpen,
   actionLabel,
   isPreparing,
-  status: _status,
+  status,
   statusMessage,
   qrImageUrl,
-  qrLocked,
+  qrLocked: _qrLocked,
   isSuccess,
   errorMessage,
   onClose,
   onRefresh,
-}: PoolActionQrDialogProps) {
+}: PoolActionWalletDialogProps) {
   if (!isOpen) {
     return null;
   }
@@ -53,21 +53,21 @@ export function PoolActionQrDialog({
           <p className="mt-2 text-sm text-slate-700">{statusMessage}</p>
         </div>
 
-        <div className="mt-4 flex justify-center rounded-xl border border-slate-200 bg-white p-3">
-          {qrLocked ? (
-            <div className="grid h-[320px] w-[320px] place-items-center rounded-lg bg-slate-100 text-center text-sm font-semibold text-slate-600">
-              QR already scanned.
-              <br />
-              Continue on your phone and tap your card.
-            </div>
-          ) : qrImageUrl ? (
-            <img src={qrImageUrl} alt="Pool Action QR" className="h-[320px] w-[320px] rounded-lg object-contain" />
-          ) : (
-            <div className="grid h-[320px] w-[320px] place-items-center rounded-lg bg-slate-100 text-sm font-medium text-slate-500">
-              {isPreparing ? 'Preparing QR...' : 'Could not create QR. Please refresh.'}
-            </div>
-          )}
-        </div>
+        {status === 'attest_required' ? (
+          <div className="mt-4 flex justify-center rounded-xl border border-slate-200 bg-white p-3">
+            {qrImageUrl ? (
+              <img src={qrImageUrl} alt="Device attestation QR" className="h-[320px] w-[320px] rounded-lg object-contain" />
+            ) : (
+              <div className="grid h-[320px] w-[320px] place-items-center rounded-lg bg-slate-100 text-sm font-medium text-slate-500">
+                Preparing attestation QR...
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            Approve this action in Chainora native app. The wallet request will require card confirmation.
+          </div>
+        )}
 
         {errorMessage ? (
           <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
@@ -91,11 +91,15 @@ export function PoolActionQrDialog({
           </button>
           <button
             type="button"
-            disabled={isPreparing || qrLocked}
+            disabled={isPreparing}
             onClick={onRefresh}
             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {isPreparing ? 'Refreshing...' : 'Refresh QR'}
+            {isPreparing
+              ? 'Processing...'
+              : status === 'attest_required'
+                ? 'I have completed attestation'
+                : 'Retry'}
           </button>
         </div>
       </div>

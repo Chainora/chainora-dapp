@@ -3,7 +3,7 @@ import { getAddress, isAddress } from 'viem';
 
 import { fromInitAddress, toInitAddress } from '../components/UserDetail';
 import { chainoraApiBase } from '../configs/api';
-import { refreshAuthToken } from '../services/authQrFlow';
+import { refreshAuthToken } from '../services/authService';
 import { fetchAuthProfile, invalidateProfileCache } from '../services/profileService';
 
 type AuthState = {

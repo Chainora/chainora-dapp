@@ -1,24 +1,28 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
-import { type ChangeEvent, type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { parseUnits } from 'viem';
+import { type ChangeEvent, type FormEvent, useCallback, useMemo, useState } from 'react';
+import { useInterwovenKit } from '@initia/interwovenkit-react';
+import {
+  decodeEventLog,
+  getAddress,
+  isAddress,
+  parseUnits,
+  type Address,
+} from 'viem';
+import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
 
-import { CHAINORA_PROTOCOL_ADDRESSES } from '../contract/chainoraAddresses';
+import { DeviceAttestDialog } from '../components/wallet/DeviceAttestDialog';
 import { chainoraApiBase } from '../configs/api';
+import { FACTORY_ABI } from '../contract/chainoraAbis';
+import { CHAINORA_PROTOCOL_ADDRESSES, ZERO_ADDRESS } from '../contract/chainoraAddresses';
 import { useAuth } from '../context/AuthContext';
 import {
-  CONTRIBUTION_SYMBOL,
   CURRENCY_DECIMALS,
   createGroupSchema,
   type CreateGroupInput,
   defaultForm,
   toContractDurations,
 } from '../features/create-group/formSchema';
-import {
-  CREATE_POOL_QR_FEATURE,
-  mapCreatePoolStatusMessage,
-  resolveCreatorEVMAddress,
-  shouldLockCreatePoolQr,
-} from '../features/create-group/status';
+import { resolveCreatorEVMAddress } from '../features/create-group/status';
 import {
   DASHBOARD_FORCE_SYNC_ONCE_KEY,
   DASHBOARD_PREFERRED_MODE_KEY,
@@ -38,29 +42,54 @@ import type {
   FormState,
 } from '../features/create-group/types';
 import { useAuthFetch } from '../hooks/useAuthFetch';
+import { useDeviceAttestationGate } from '../hooks/useDeviceAttestationGate';
 import { uploadMediaImage } from '../services/mediaService';
-import { buildQrImageUrl, buildQrPayload } from '../services/qrFlow';
-import { createQrSession, openQrSessionSocket, type QrSessionResponse, type QrSessionWsEvent } from '../services/qrSessionFlow';
+import { createGroupRecord } from '../services/groupsService';
 
-const normalizeCreateGroupError = (raw: string, fallback: string): string => {
-  const message = String(raw ?? '').trim();
+type CreateGroupWalletFlowState =
+  | 'idle'
+  | 'connecting'
+  | 'awaiting_wallet_approval'
+  | 'awaiting_card'
+  | 'broadcasting'
+  | 'confirmed'
+  | 'attest_required'
+  | 'error';
+
+const mapCreateGroupWalletStatus = (state: CreateGroupWalletFlowState): string => {
+  switch (state) {
+    case 'connecting':
+      return 'Connecting wallet session...';
+    case 'awaiting_wallet_approval':
+      return 'Preparing create-group transaction...';
+    case 'awaiting_card':
+      return 'Approve in native app and sign with your card.';
+    case 'broadcasting':
+      return 'Broadcasting transaction and waiting for confirmation...';
+    case 'confirmed':
+      return 'Group created successfully.';
+    case 'attest_required':
+      return 'Device verification required before create-group.';
+    case 'error':
+      return 'Could not create group.';
+    default:
+      return 'Review your group details, then confirm with wallet.';
+  }
+};
+
+const normalizeCreateGroupError = (raw: unknown): string => {
+  const fallback = 'Could not create group. Please try again.';
+  const message = raw instanceof Error ? raw.message.trim() : String(raw ?? '').trim();
   if (!message) {
     return fallback;
   }
 
   const lower = message.toLowerCase();
   if (
-    lower.includes('payload')
-    || lower.includes('session')
-    || lower.includes('websocket')
-    || lower.includes('rpc')
-    || lower.includes('tx')
-    || lower.includes('hash')
-    || lower.includes('nonce')
+    lower.includes('nonce')
     || lower.includes('sequence')
-    || lower.includes('selector')
     || lower.includes('invalid parameters')
-    || lower.includes('status')
+    || lower.includes('rpc')
   ) {
     return fallback;
   }
@@ -68,80 +97,113 @@ const normalizeCreateGroupError = (raw: string, fallback: string): string => {
   return message;
 };
 
+const decodePoolCreatedFromReceipt = (
+  logs: readonly { address: Address; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
+  factoryAddress: Address,
+): { poolAddress: Address; poolId: string } => {
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== factoryAddress.toLowerCase()) {
+      continue;
+    }
+
+    try {
+      const decoded = decodeEventLog({
+        abi: FACTORY_ABI,
+        data: log.data,
+        topics: [...log.topics] as [`0x${string}`, ...`0x${string}`[]],
+        strict: false,
+      });
+
+      if (decoded.eventName !== 'ChainoraPoolCreated') {
+        continue;
+      }
+
+      return {
+        poolAddress: getAddress(String(decoded.args.pool)),
+        poolId: String(decoded.args.poolId),
+      };
+    } catch {
+      // Ignore non-matching logs.
+    }
+  }
+
+  throw new Error('Transaction confirmed but ChainoraPoolCreated event was not found.');
+};
+
 export function CreateGroupPage() {
   const navigate = useNavigate();
   const { token, isAuthenticated, address, initAddress } = useAuth();
   const { authFetch } = useAuthFetch();
+  const { openConnect } = useInterwovenKit();
+  const { address: connectedWalletAddressRaw } = useAccount();
+  const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient();
 
-  const [form, setForm] = useState<FormState>(defaultForm);
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [submitError, setSubmitError] = useState('');
-  const [isUploadingGroupImage, setIsUploadingGroupImage] = useState(false);
-  const [showScanDialog, setShowScanDialog] = useState(false);
-  const [reviewInput, setReviewInput] = useState<CreateGroupInput | null>(null);
-  const [reviewSession, setReviewSession] = useState<QrSessionResponse | null>(null);
-  const [reviewWsStatus, setReviewWsStatus] = useState('idle');
-  const [reviewDialogError, setReviewDialogError] = useState('');
-  const [isPreparingReviewSession, setIsPreparingReviewSession] = useState(false);
-  const [toasts, setToasts] = useState<UiToast[]>([]);
-  const reviewWsRef = useRef<WebSocket | null>(null);
-  const hasAutoNavigatedAfterSuccessRef = useRef(false);
-  const toastCounterRef = useRef(1);
-  const lastToastKeyRef = useRef('');
-
-  const amountPerPeriod = Number(form.amountPerPeriod || '0');
-  const members = Number(form.targetMembers || '0');
-  const totalPot = Number.isFinite(amountPerPeriod * members) ? amountPerPeriod * members : 0;
+  const connectedWalletAddress = useMemo(() => {
+    if (!connectedWalletAddressRaw || !isAddress(connectedWalletAddressRaw)) {
+      return null;
+    }
+    return getAddress(connectedWalletAddressRaw);
+  }, [connectedWalletAddressRaw]);
 
   const creatorEVMAddress = useMemo(
     () => resolveCreatorEVMAddress(address, initAddress),
     [address, initAddress],
   );
 
-  const reviewPayload = useMemo(() => {
-    if (!reviewInput || !reviewSession) {
-      return '';
+  const actionAddress = useMemo<Address | null>(() => {
+    if (creatorEVMAddress && isAddress(creatorEVMAddress)) {
+      return getAddress(creatorEVMAddress);
+    }
+    if (connectedWalletAddress && isAddress(connectedWalletAddress)) {
+      return getAddress(connectedWalletAddress);
+    }
+    return null;
+  }, [connectedWalletAddress, creatorEVMAddress]);
+
+  const attestationGate = useDeviceAttestationGate({
+    publicClient,
+    accountAddress: actionAddress,
+    apiBase: chainoraApiBase,
+  });
+
+  const [form, setForm] = useState<FormState>(defaultForm);
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [submitError, setSubmitError] = useState('');
+  const [isUploadingGroupImage, setIsUploadingGroupImage] = useState(false);
+  const [showReviewDialog, setShowReviewDialog] = useState(false);
+  const [reviewInput, setReviewInput] = useState<CreateGroupInput | null>(null);
+  const [reviewFlowState, setReviewFlowState] = useState<CreateGroupWalletFlowState>('idle');
+  const [reviewDialogError, setReviewDialogError] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [isCreatePoolSuccess, setIsCreatePoolSuccess] = useState(false);
+  const [toasts, setToasts] = useState<UiToast[]>([]);
+  const [pendingNavigationOnDone, setPendingNavigationOnDone] = useState(false);
+
+  const amountPerPeriod = Number(form.amountPerPeriod || '0');
+  const members = Number(form.targetMembers || '0');
+  const totalPot = Number.isFinite(amountPerPeriod * members) ? amountPerPeriod * members : 0;
+
+  const reviewStatusMessage = useMemo(() => mapCreateGroupWalletStatus(reviewFlowState), [reviewFlowState]);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(previous => previous.filter(item => item.id !== id));
+  }, []);
+
+  const pushToast = useCallback((tone: UiToast['tone'], message: string) => {
+    const trimmed = message.trim();
+    if (!trimmed) {
+      return;
     }
 
-    const contractTimes = toContractDurations(
-      reviewInput.periodDuration,
-      reviewInput.auctionWindow,
-      reviewInput.contributionWindow,
-    );
-
-    return buildQrPayload({
-      feature: CREATE_POOL_QR_FEATURE,
-      apiBase: chainoraApiBase,
-      data: {
-        sessionId: reviewSession.sessionId,
-        action: 'review_and_sign_create_pool',
-        tokenSymbol: CONTRIBUTION_SYMBOL,
-        groupName: reviewInput.name,
-        groupDescription: reviewInput.description,
-        groupImageUrl: reviewInput.groupImageUrl?.trim() || undefined,
-        publicRecruitment: reviewInput.groupVisibility === 'public',
-        minReputationScore: reviewInput.minReputationScore,
-        authToken: token,
-        contractVariables: {
-          factoryAddress: CHAINORA_PROTOCOL_ADDRESSES.factory,
-          contributionAmount: reviewInput.amountPerPeriod,
-          contributionAmountWei: parseUnits(reviewInput.amountPerPeriod, CURRENCY_DECIMALS).toString(),
-          skipPrecheck: true,
-          publicRecruitment: reviewInput.groupVisibility === 'public',
-          minReputation: reviewInput.minReputationScore,
-          targetMembers: reviewInput.targetMembers,
-          periodDurationSeconds: contractTimes.periodDurationSeconds,
-          contributionWindowSeconds: contractTimes.contributionWindowSeconds,
-          auctionWindowSeconds: contractTimes.auctionWindowSeconds,
-        },
-      },
-    });
-  }, [reviewInput, reviewSession, token]);
-
-  const qrImageUrl = useMemo(() => buildQrImageUrl(reviewPayload, 420), [reviewPayload]);
-  const reviewStatusMessage = useMemo(() => mapCreatePoolStatusMessage(reviewWsStatus), [reviewWsStatus]);
-  const isReviewQrLocked = shouldLockCreatePoolQr(reviewWsStatus);
-  const isCreatePoolSuccess = reviewWsStatus === 'create_pool_success';
+    const id = Date.now() + Math.floor(Math.random() * 10_000);
+    setToasts(previous => [...previous, { id, tone, message: trimmed }]);
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        setToasts(previous => previous.filter(item => item.id !== id));
+      }, 5_000);
+    }
+  }, []);
 
   const setField = (field: keyof FormState, value: string) => {
     setForm(previous => ({ ...previous, [field]: value }));
@@ -167,8 +229,8 @@ export function CreateGroupPage() {
     try {
       const upload = await uploadMediaImage(authFetch, file, 'group');
       setForm(previous => ({ ...previous, groupImageUrl: upload.url }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to upload group image';
+    } catch (uploadError) {
+      const message = uploadError instanceof Error ? uploadError.message : 'Unable to upload group image';
       setErrors(previous => ({ ...previous, groupImageUrl: message }));
     } finally {
       setIsUploadingGroupImage(false);
@@ -215,163 +277,14 @@ export function CreateGroupPage() {
   };
 
   const closeReviewDialog = useCallback(() => {
-    setShowScanDialog(false);
-    setReviewSession(null);
-    setReviewWsStatus('idle');
+    setShowReviewDialog(false);
+    setReviewInput(null);
     setReviewDialogError('');
-    setIsPreparingReviewSession(false);
-    hasAutoNavigatedAfterSuccessRef.current = false;
-    reviewWsRef.current?.close();
-    reviewWsRef.current = null;
+    setReviewFlowState('idle');
+    setIsSubmittingReview(false);
+    setIsCreatePoolSuccess(false);
+    setPendingNavigationOnDone(false);
   }, []);
-
-  const dismissToast = useCallback((id: number) => {
-    setToasts(previous => previous.filter(item => item.id !== id));
-  }, []);
-
-  const pushToast = useCallback((tone: UiToast['tone'], message: string) => {
-    const trimmed = message.trim();
-    if (!trimmed) {
-      return;
-    }
-    const id = toastCounterRef.current;
-    toastCounterRef.current += 1;
-    setToasts(previous => [...previous, { id, tone, message: trimmed }]);
-    if (typeof window !== 'undefined') {
-      window.setTimeout(() => {
-        setToasts(previous => previous.filter(item => item.id !== id));
-      }, 5000);
-    }
-  }, []);
-
-  const reportReviewError = useCallback((message: string) => {
-    setReviewDialogError(message);
-    pushToast('error', message);
-  }, [pushToast]);
-
-  const extractWsErrorText = useCallback((payload: QrSessionWsEvent): string => {
-    const source = payload as Record<string, unknown>;
-    const keys = ['error', 'errorMessage', 'reason', 'message', 'detail', 'details'];
-    for (const key of keys) {
-      const value = source[key];
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-    return '';
-  }, []);
-
-  const startCreatePoolSession = useCallback(async () => {
-    if (!reviewInput) {
-      return;
-    }
-    if (!creatorEVMAddress) {
-      const message = 'Please log in again to continue.';
-      reportReviewError(message);
-      setReviewWsStatus('error');
-      return;
-    }
-
-    setIsPreparingReviewSession(true);
-    setReviewDialogError('');
-    setReviewWsStatus('idle');
-    setReviewSession(null);
-    hasAutoNavigatedAfterSuccessRef.current = false;
-
-    reviewWsRef.current?.close();
-    reviewWsRef.current = null;
-
-    try {
-      const session = await createQrSession(chainoraApiBase);
-      setReviewSession(session);
-      setReviewWsStatus('qr_ready');
-
-      const ws = openQrSessionSocket(
-        chainoraApiBase,
-        session.sessionId,
-        (payload: QrSessionWsEvent) => {
-          const rawStatus = String(payload?.status ?? '').trim();
-          if (!rawStatus) {
-            return;
-          }
-
-          const nextStatus = rawStatus === 'create_pool_pending_confirmation'
-            ? 'create_pool_waiting_receipt'
-            : rawStatus;
-          setReviewWsStatus(nextStatus);
-          const wsError = extractWsErrorText(payload);
-          if (nextStatus === 'create_pool_failed') {
-            const message = normalizeCreateGroupError(
-              wsError,
-              'Could not create group. Refresh QR and try again.',
-            );
-            setReviewDialogError(message);
-          }
-        },
-        state => {
-          setReviewWsStatus(current => (
-            state === 'closed' && current === 'create_pool_success'
-              ? current
-              : state
-          ));
-          if (state === 'message_error') {
-            const message = 'Connection interrupted. Please refresh QR.';
-            reportReviewError(message);
-          } else if (state === 'error') {
-            const message = 'Connection lost. Please refresh QR.';
-            reportReviewError(message);
-          }
-        },
-      );
-
-      reviewWsRef.current = ws;
-    } catch (error) {
-      const message = normalizeCreateGroupError(
-        error instanceof Error ? error.message : '',
-        'Could not prepare QR. Please try again.',
-      );
-      reportReviewError(message);
-      setReviewSession(null);
-      setReviewWsStatus('error');
-    } finally {
-      setIsPreparingReviewSession(false);
-    }
-  }, [creatorEVMAddress, extractWsErrorText, reportReviewError, reviewInput]);
-
-  useEffect(() => {
-    if (!showScanDialog) {
-      return;
-    }
-
-    void startCreatePoolSession();
-  }, [showScanDialog, startCreatePoolSession]);
-
-  useEffect(() => {
-    return () => {
-      reviewWsRef.current?.close();
-      reviewWsRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (reviewWsStatus === 'create_pool_success') {
-      const key = 'create_pool_success';
-      if (lastToastKeyRef.current !== key) {
-        lastToastKeyRef.current = key;
-        pushToast('success', 'Group created successfully.');
-      }
-      return;
-    }
-
-    if (reviewWsStatus === 'create_pool_failed') {
-      const message = reviewDialogError.trim() || 'Create group failed. Please try again.';
-      const key = `create_pool_failed:${message}`;
-      if (lastToastKeyRef.current !== key) {
-        lastToastKeyRef.current = key;
-        pushToast('error', message);
-      }
-    }
-  }, [pushToast, reviewDialogError, reviewWsStatus]);
 
   const navigateToDashboardAfterCreate = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -383,15 +296,126 @@ export function CreateGroupPage() {
     void navigate({ to: '/dashboard' });
   }, [navigate, reviewInput]);
 
-  useEffect(() => {
-    if (!showScanDialog || !isCreatePoolSuccess || hasAutoNavigatedAfterSuccessRef.current) {
+  const executeCreateGroup = useCallback(async (input: CreateGroupInput) => {
+    if (!publicClient || !walletClient || !connectedWalletAddress) {
+      setReviewFlowState('connecting');
+      openConnect();
+      throw new Error('Wallet is not connected. Please connect Chainora wallet first.');
+    }
+    if (!actionAddress) {
+      throw new Error('Please log in again to continue.');
+    }
+    if (connectedWalletAddress.toLowerCase() !== actionAddress.toLowerCase()) {
+      throw new Error('Connected wallet does not match authenticated account.');
+    }
+    if (!token.trim()) {
+      throw new Error('Session expired. Please log in again.');
+    }
+    if (CHAINORA_PROTOCOL_ADDRESSES.factory.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
+      throw new Error('Factory contract is not configured.');
+    }
+
+    setIsSubmittingReview(true);
+    setReviewDialogError('');
+    setReviewFlowState('awaiting_wallet_approval');
+
+    try {
+      const contractTimes = toContractDurations(
+        input.periodDuration,
+        input.auctionWindow,
+        input.contributionWindow,
+      );
+      const contributionAmountWei = parseUnits(input.amountPerPeriod, CURRENCY_DECIMALS);
+
+      setReviewFlowState('awaiting_card');
+      const txHash = await walletClient.writeContract({
+        account: connectedWalletAddress,
+        address: CHAINORA_PROTOCOL_ADDRESSES.factory,
+        abi: FACTORY_ABI,
+        functionName: 'createPool',
+        args: [
+          {
+            contributionAmount: contributionAmountWei,
+            minReputation: BigInt(input.minReputationScore),
+            targetMembers: input.targetMembers,
+            periodDuration: contractTimes.periodDurationSeconds,
+            contributionWindow: contractTimes.contributionWindowSeconds,
+            auctionWindow: contractTimes.auctionWindowSeconds,
+          },
+          input.groupVisibility === 'public',
+        ],
+      });
+
+      setReviewFlowState('broadcasting');
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.status !== 'success') {
+        throw new Error('Create-group transaction reverted.');
+      }
+
+      const created = decodePoolCreatedFromReceipt(
+        receipt.logs as readonly { address: Address; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
+        CHAINORA_PROTOCOL_ADDRESSES.factory,
+      );
+
+      await createGroupRecord(token.trim(), {
+        poolId: created.poolId,
+        poolAddress: created.poolAddress,
+        name: input.name,
+        description: input.description,
+        groupImageUrl: input.groupImageUrl?.trim() || '',
+        publicRecruitment: input.groupVisibility === 'public',
+        contributionAmount: contributionAmountWei.toString(),
+        minReputation: String(input.minReputationScore),
+        targetMembers: input.targetMembers,
+        periodDuration: contractTimes.periodDurationSeconds,
+        contributionWindow: contractTimes.contributionWindowSeconds,
+        auctionWindow: contractTimes.auctionWindowSeconds,
+        txHash,
+      });
+
+      setIsCreatePoolSuccess(true);
+      setPendingNavigationOnDone(true);
+      setReviewFlowState('confirmed');
+      pushToast('success', 'Group created successfully.');
+    } catch (error) {
+      const message = normalizeCreateGroupError(error);
+      setReviewFlowState('error');
+      setReviewDialogError(message);
+      pushToast('error', message);
+      throw error;
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  }, [
+    actionAddress,
+    connectedWalletAddress,
+    openConnect,
+    publicClient,
+    pushToast,
+    token,
+    walletClient,
+  ]);
+
+  const onConfirmReview = useCallback(async () => {
+    if (!reviewInput) {
       return;
     }
 
-    hasAutoNavigatedAfterSuccessRef.current = true;
-    closeReviewDialog();
-    navigateToDashboardAfterCreate();
-  }, [closeReviewDialog, isCreatePoolSuccess, navigateToDashboardAfterCreate, showScanDialog]);
+    try {
+      const started = await attestationGate.runWithGate(async () => {
+        await executeCreateGroup(reviewInput);
+      });
+
+      if (!started) {
+        setReviewFlowState('attest_required');
+      }
+    } catch (error) {
+      const message = normalizeCreateGroupError(error);
+      setReviewFlowState('error');
+      setReviewDialogError(message);
+      setIsSubmittingReview(false);
+    }
+  }, [attestationGate, executeCreateGroup, reviewInput]);
 
   const onReview = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -401,13 +425,15 @@ export function CreateGroupPage() {
     if (!validData) {
       return;
     }
-    if (!creatorEVMAddress) {
+    if (!actionAddress) {
       setSubmitError('Please log in again to continue.');
       return;
     }
 
     setReviewInput(validData);
-    setShowScanDialog(true);
+    setReviewFlowState('idle');
+    setReviewDialogError('');
+    setShowReviewDialog(true);
   };
 
   if (!isAuthenticated) {
@@ -453,22 +479,41 @@ export function CreateGroupPage() {
       </form>
 
       <CreateGroupReviewDialog
-        open={showScanDialog}
-        reviewStatusMessage={reviewStatusMessage}
-        isPreparingReviewSession={isPreparingReviewSession}
-        isReviewQrLocked={isReviewQrLocked}
+        open={showReviewDialog}
+        statusMessage={reviewStatusMessage}
+        isSubmitting={isSubmittingReview}
         isCreatePoolSuccess={isCreatePoolSuccess}
-        qrImageUrl={qrImageUrl}
         reviewDialogError={reviewDialogError}
         closeReviewDialog={closeReviewDialog}
-        onRefresh={() => {
-          void startCreatePoolSession();
+        onConfirm={() => {
+          void onConfirmReview();
         }}
         onDone={() => {
+          if (!pendingNavigationOnDone) {
+            closeReviewDialog();
+            return;
+          }
           closeReviewDialog();
           navigateToDashboardAfterCreate();
         }}
       />
+
+      <DeviceAttestDialog
+        open={attestationGate.isDialogOpen}
+        statusMessage={attestationGate.statusMessage}
+        qrImageUrl={attestationGate.qrImageUrl}
+        isChecking={attestationGate.isChecking}
+        onClose={attestationGate.closeDialog}
+        onConfirm={() => {
+          void attestationGate.confirmAttestationAndResume().catch(error => {
+            const message = normalizeCreateGroupError(error);
+            setReviewFlowState('error');
+            setReviewDialogError(message);
+            pushToast('error', message);
+          });
+        }}
+      />
+
       <ToastStack toasts={toasts} onDismiss={dismissToast} />
     </section>
   );

@@ -1,24 +1,20 @@
 export function CreateGroupReviewDialog({
   open,
-  reviewStatusMessage,
-  isPreparingReviewSession,
-  isReviewQrLocked,
+  statusMessage,
+  isSubmitting,
   isCreatePoolSuccess,
-  qrImageUrl,
   reviewDialogError,
   closeReviewDialog,
-  onRefresh,
+  onConfirm,
   onDone,
 }: {
   open: boolean;
-  reviewStatusMessage: string;
-  isPreparingReviewSession: boolean;
-  isReviewQrLocked: boolean;
+  statusMessage: string;
+  isSubmitting: boolean;
   isCreatePoolSuccess: boolean;
-  qrImageUrl: string;
   reviewDialogError: string;
   closeReviewDialog: () => void;
-  onRefresh: () => void;
+  onConfirm: () => void;
   onDone: () => void;
 }) {
   if (!open) {
@@ -30,8 +26,8 @@ export function CreateGroupReviewDialog({
       <div className="max-h-[90svh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl ring-1 ring-slate-200">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-[0.18em] text-sky-500">Chainora Native Wallet</p>
-            <h2 className="mt-1.5 text-lg font-bold text-slate-900">Scan and sign create group</h2>
+            <p className="text-xs uppercase tracking-[0.18em] text-sky-500">Chainora Wallet Session</p>
+            <h2 className="mt-1.5 text-lg font-bold text-slate-900">Sign create group request</h2>
           </div>
           <button
             type="button"
@@ -45,28 +41,24 @@ export function CreateGroupReviewDialog({
 
         <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
           <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Status</p>
-          <p className="mt-1 text-sm font-semibold text-sky-700">{reviewStatusMessage}</p>
+          <p className="mt-1 text-sm font-semibold text-sky-700">{statusMessage}</p>
         </div>
 
-        <div className="mt-3 grid place-items-center">
-          {isReviewQrLocked && !isCreatePoolSuccess ? (
-            <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-5 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
-              QR already scanned.
-              <br />
-              Continue on your phone and tap your card.
-            </div>
-          ) : qrImageUrl ? (
-            <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-              <img src={qrImageUrl} alt="Create Group Review QR" className="h-[260px] w-[260px] rounded-lg object-contain" />
-            </div>
-          ) : (
-            <div className="flex h-[220px] w-[220px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
-              {isPreparingReviewSession ? 'Preparing QR...' : 'Could not create QR. Please refresh.'}
-            </div>
-          )}
-        </div>
-        <p className="mt-2 text-center text-xs text-slate-500">Hold phone steady 15-25 cm for best QR scan.</p>
-        {reviewDialogError ? <p className="mt-2 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{reviewDialogError}</p> : null}
+        <p className="mt-3 text-sm text-slate-600">
+          Approve this request in Chainora native app. The app will ask you to confirm and sign with NFC card.
+        </p>
+
+        {reviewDialogError ? (
+          <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+            {reviewDialogError}
+          </p>
+        ) : null}
+
+        {isCreatePoolSuccess ? (
+          <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+            Group created successfully.
+          </p>
+        ) : null}
 
         <div className="mt-4 flex items-center justify-end gap-2">
           <button
@@ -79,10 +71,10 @@ export function CreateGroupReviewDialog({
           <button
             type="button"
             className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
-            onClick={onRefresh}
-            disabled={isPreparingReviewSession || isReviewQrLocked}
+            onClick={onConfirm}
+            disabled={isSubmitting || isCreatePoolSuccess}
           >
-            {isPreparingReviewSession ? 'Refreshing...' : 'Refresh QR'}
+            {isSubmitting ? 'Processing...' : 'Confirm & Sign'}
           </button>
           <button
             type="button"
