@@ -3,7 +3,12 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "yarn@1.22.22",
   "scripts": {
+    "start": "vite",
     "dev": "vite",
     "build": "yarn router:generate && tsc -b && vite build",
     "preview": "vite preview",

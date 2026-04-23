@@ -15,6 +15,7 @@ import { Button } from '../ui/Button';
 type WalletLoginState =
   | 'idle'
   | 'connecting'
+  | 'awaiting_wallet_scan'
   | 'awaiting_wallet_approval'
   | 'awaiting_card'
   | 'broadcasting'
@@ -24,11 +25,13 @@ type WalletLoginState =
 const resolveLoginStatusMessage = (state: WalletLoginState): string => {
   switch (state) {
     case 'connecting':
-      return 'Connecting wallet...';
+      return 'Opening wallet connector...';
+    case 'awaiting_wallet_scan':
+      return 'Scan the QR code with Chainora Wallet.';
     case 'awaiting_wallet_approval':
-      return 'Preparing login request...';
+      return 'Approve the session in Chainora Wallet.';
     case 'awaiting_card':
-      return 'Approve and sign in native app with your card.';
+      return 'Approve the signature and tap your card in Chainora Wallet.';
     case 'broadcasting':
       return 'Finalizing sign-in...';
     case 'confirmed':
@@ -41,7 +44,7 @@ const resolveLoginStatusMessage = (state: WalletLoginState): string => {
 };
 
 export function HeaderLoginButton() {
-  const { address: walletAddress, isConnected } = useAccount();
+  const { address: walletAddress, isConnected, status: accountStatus } = useAccount();
   const { openConnect, openWallet, openBridge } = useInterwovenKit();
   const { signMessageAsync } = useSignMessage();
   const { address, username, avatarUrl, isAuthenticated, logout, setAuthenticated, syncProfile } = useAuth();
@@ -161,6 +164,16 @@ export function HeaderLoginButton() {
 
     void startWalletLogin();
   }, [isConnected, startWalletLogin, status, walletAddress]);
+
+  useEffect(() => {
+    if (status !== 'connecting' || isConnected) {
+      return;
+    }
+
+    if (accountStatus === 'connecting' || accountStatus === 'reconnecting') {
+      setStatus(current => (current === 'connecting' ? 'awaiting_wallet_scan' : current));
+    }
+  }, [accountStatus, isConnected, status]);
 
   if (isAuthenticated) {
     return (
