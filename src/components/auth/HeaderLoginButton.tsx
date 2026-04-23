@@ -151,6 +151,7 @@ export function HeaderLoginButton() {
         }, 1_500);
       }
     } catch (loginError) {
+      console.warn('[login] startWalletLogin: failed', loginError);
       const message = loginError instanceof Error ? loginError.message : 'Could not complete sign-in.';
       setError(message);
       setStatus('error');
@@ -158,7 +159,11 @@ export function HeaderLoginButton() {
   }, [connectWallet, setAuthenticated, signMessageAsync, syncProfile, walletAddress]);
 
   useEffect(() => {
-    if (!isConnected || !walletAddress || status !== 'connecting') {
+    if (!isConnected || !walletAddress) {
+      return;
+    }
+
+    if (status !== 'connecting' && status !== 'awaiting_wallet_scan') {
       return;
     }
 

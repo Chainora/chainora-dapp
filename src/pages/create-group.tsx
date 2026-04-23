@@ -28,6 +28,13 @@ import {
   DASHBOARD_PREFERRED_MODE_KEY,
 } from '../features/dashboard/constants';
 import {
+  readDashboardGroupCache,
+  readJoinedPoolIdCache,
+  writeDashboardGroupCache,
+  writeJoinedPoolIdCache,
+} from '../features/dashboard/cache';
+import type { ApiGroup } from '../services/groupsService';
+import {
   BasicInfoSection,
   ContractSummarySection,
   FinancialSection,
@@ -45,6 +52,40 @@ import { useAuthFetch } from '../hooks/useAuthFetch';
 import { useDeviceAttestationGate } from '../hooks/useDeviceAttestationGate';
 import { uploadMediaImage } from '../services/mediaService';
 import { createGroupRecord } from '../services/groupsService';
+
+const DEFAULT_DASHBOARD_QUERY_KEY = '|created_at|desc||';
+
+const mergeGroupIntoList = (current: ApiGroup[], incoming: ApiGroup): ApiGroup[] => {
+  const filtered = current.filter(
+    group => group.poolId.trim().toLowerCase() !== incoming.poolId.trim().toLowerCase(),
+  );
+  return [incoming, ...filtered];
+};
+
+const primeDashboardCacheWithGroup = (group: ApiGroup, isPublic: boolean): void => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const modes: Array<'joined' | 'public'> = isPublic ? ['joined', 'public'] : ['joined'];
+  for (const mode of modes) {
+    const existing = readDashboardGroupCache(mode, DEFAULT_DASHBOARD_QUERY_KEY) ?? [];
+    writeDashboardGroupCache(mode, DEFAULT_DASHBOARD_QUERY_KEY, mergeGroupIntoList(existing, group));
+  }
+};
+
+const primeJoinedPoolCache = (viewerAddress: string, poolId: string): void => {
+  if (!viewerAddress || !poolId) {
+    return;
+  }
+
+  const existing = readJoinedPoolIdCache(viewerAddress);
+  const lowered = poolId.trim().toLowerCase();
+  if (existing.some(item => item.trim().toLowerCase() === lowered)) {
+    return;
+  }
+  writeJoinedPoolIdCache(viewerAddress, [poolId, ...existing]);
+};
 
 type CreateGroupWalletFlowState =
   | 'idle'
@@ -357,7 +398,7 @@ export function CreateGroupPage() {
         CHAINORA_PROTOCOL_ADDRESSES.factory,
       );
 
-      await createGroupRecord(token.trim(), {
+      const persistedGroup = await createGroupRecord(token.trim(), {
         poolId: created.poolId,
         poolAddress: created.poolAddress,
         name: input.name,
@@ -372,6 +413,9 @@ export function CreateGroupPage() {
         auctionWindow: contractTimes.auctionWindowSeconds,
         txHash,
       });
+
+      primeDashboardCacheWithGroup(persistedGroup, input.groupVisibility === 'public');
+      primeJoinedPoolCache(actionAddress, persistedGroup.poolId);
 
       setIsCreatePoolSuccess(true);
       setPendingNavigationOnDone(true);
