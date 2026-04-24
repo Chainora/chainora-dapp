@@ -1,7 +1,9 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from '@tanstack/react-router';
+import { useInterwovenKit } from '@initia/interwovenkit-react';
 
 import { chainoraApiBase } from '../configs/api';
+import { interwovenBridgeConfig, interwovenBridgePrefill } from '../configs/interwoven';
 import { useAuthFetch } from '../hooks/useAuthFetch';
 import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
@@ -74,6 +76,7 @@ const toFriendlyRelayerError = (raw: unknown, fallback: string): string => {
 export function ProfilePage() {
   const { isAuthenticated, setAvatarUrl } = useAuth();
   const { authFetch } = useAuthFetch();
+  const { isConnected: isBridgeWalletConnected, openBridge, openConnect } = useInterwovenKit();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [registerUsername, setRegisterUsername] = useState('');
   const [showRegisterForm, setShowRegisterForm] = useState(false);
@@ -94,8 +97,17 @@ export function ProfilePage() {
   const [relayerWsState, setRelayerWsState] = useState('idle');
   const [isQrDialogOpen, setIsQrDialogOpen] = useState(false);
   const hasUsername = Boolean(normalizeProfileUsername(profile?.username));
+  const bridgeRouteEnabled = interwovenBridgeConfig.enabled;
   const tcnrSymbol = (import.meta.env.VITE_CHAINORA_CURRENCY_SYMBOL?.trim() || 'tCNR').toUpperCase();
   const isAwaitingCardScan = relayerWsState === 'awaiting_card_scan';
+  const bridgeButtonLabel = !bridgeRouteEnabled
+    ? 'Bridge unavailable'
+    : isBridgeWalletConnected
+      ? 'Bridge funds'
+      : 'Connect bridge wallet';
+  const bridgeStatusMessage = bridgeRouteEnabled
+    ? `Source: ${interwovenBridgeConfig.sourceChainId} / ${interwovenBridgeConfig.sourceDenom}`
+    : 'Bridge to Chainora will open after the rollup is registered on router.';
   const reputationLabel = useMemo(() => {
     const raw = String(profile?.reputationScore ?? '0').trim();
     if (!raw) {
@@ -115,6 +127,25 @@ export function ProfilePage() {
     setRelayerQrPayload('');
     setRelayerWsState(nextState);
   }, []);
+
+  const handleOpenBridge = useCallback(() => {
+    setError('');
+    setNotice('');
+
+    if (!bridgeRouteEnabled) {
+      return;
+    }
+
+    try {
+      if (!isBridgeWalletConnected) {
+        openConnect();
+        return;
+      }
+      openBridge(interwovenBridgePrefill);
+    } catch {
+      setError('Could not open bridge right now. Please try again.');
+    }
+  }, [bridgeRouteEnabled, isBridgeWalletConnected, openBridge, openConnect]);
 
   const refreshProfile = useCallback(
     async (showGlobalLoading: boolean, clearMessages: boolean) => {
@@ -418,6 +449,23 @@ export function ProfilePage() {
             <p className="text-xs uppercase tracking-wider text-slate-500">Wallet</p>
             <p className="mt-1 text-sm font-medium text-slate-900 break-all">{toInitAddress(profile.address).toUpperCase() || profile.address}</p>
             <p className="mt-1 text-xs text-slate-500 break-all">EVM: {profile.address}</p>
+
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Bridge</p>
+              <p className="mt-1 text-xs text-slate-600">{bridgeStatusMessage}</p>
+              <button
+                type="button"
+                className={`mt-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                  bridgeRouteEnabled
+                    ? 'bg-sky-600 text-white hover:bg-sky-700'
+                    : 'cursor-not-allowed bg-slate-100 text-slate-500'
+                }`}
+                onClick={handleOpenBridge}
+                disabled={!bridgeRouteEnabled}
+              >
+                {bridgeButtonLabel}
+              </button>
+            </div>
           </div>
 
           <div>
