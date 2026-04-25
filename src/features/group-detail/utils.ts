@@ -48,13 +48,13 @@ export const toPeriodStatusLabel = (status: number): string => {
 export const toStatusPill = (status: number): string => {
   switch (status) {
     case 0:
-      return 'bg-amber-100 text-amber-700 border-amber-200';
+      return 'chip chip-warn';
     case 1:
-      return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      return 'chip chip-ok';
     case 2:
-      return 'bg-slate-200 text-slate-700 border-slate-300';
+      return 'chip';
     default:
-      return 'bg-slate-100 text-slate-600 border-slate-200';
+      return 'chip';
   }
 };
 

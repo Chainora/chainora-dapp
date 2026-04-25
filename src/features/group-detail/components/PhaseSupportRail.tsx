@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { Button } from '../../../components/ui/Button';
 import { toInitAddress } from '../../../components/UserDetail';
 import type { InviteProposalView, MembershipVoteMode } from '../../../components/group-detail/types';
 import { compactUiConfig, supportTabLabel, type CompactUiPhase, type SupportRailTab } from '../compactConfig';
@@ -20,11 +21,11 @@ const OverflowSlider = ({
   </div>
 );
 
-const positiveButtonClass =
-  'inline-flex items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60';
-
-const warningButtonClass =
-  'inline-flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60';
+const memberRowStyle = {
+  background: 'var(--ink-1)',
+  border: '1px solid var(--ink-5)',
+  borderRadius: 'var(--r-md)',
+} as const;
 
 const toneByMemberState = (state: string): 'success' | 'warning' | 'info' | 'muted' => {
   if (['paid', 'best_bidder', 'recipient_claimed', 'completed', 'vote_continue'].includes(state)) {
@@ -87,22 +88,28 @@ export function PhaseSupportRail({
   const visibleProposals = proposals;
 
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-semibold text-slate-900">Support Rail</h3>
+    <aside className="card-raised flex h-full min-h-0 flex-col p-4">
+      <h3 className="t-h4 c-1">Support Rail</h3>
 
       {tabs.length > 1 ? (
-        <div className="mt-2 inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
+        <div
+          className="mt-2 inline-flex items-center gap-1 p-1"
+          style={{
+            background: 'var(--ink-1)',
+            border: '1px solid var(--ink-5)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
           {tabs.map(tab => (
-            <button
+            <Button
               key={tab}
               type="button"
+              variant={tab === activeTab ? 'primary' : 'ghost'}
+              size="sm"
               onClick={() => setActiveTab(tab)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                tab === activeTab ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:bg-white/70'
-              }`}
             >
               {supportTabLabel(tab, uiPhase)}
-            </button>
+            </Button>
           ))}
         </div>
       ) : null}
@@ -118,7 +125,11 @@ export function PhaseSupportRail({
               });
 
               return (
-                <div key={member.address} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <div
+                  key={member.address}
+                  className="flex items-center justify-between gap-2 px-3 py-2"
+                  style={memberRowStyle}
+                >
                   <div className="min-w-0 flex items-center gap-2">
                     <div
                       className="group relative shrink-0"
@@ -128,27 +139,43 @@ export function PhaseSupportRail({
                         <img
                           src={member.avatarUrl}
                           alt={`${member.displayLabel} avatar`}
-                          className="h-9 w-9 rounded-full object-cover ring-1 ring-slate-200"
+                          className="h-9 w-9 rounded-full object-cover"
+                          style={{ boxShadow: '0 0 0 1px var(--ink-5)' }}
                         />
                       ) : (
-                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">
+                        <span
+                          className="t-tiny inline-flex h-9 w-9 items-center justify-center rounded-full font-semibold"
+                          style={{
+                            background:
+                              'linear-gradient(135deg, var(--signal-400), var(--arc-400))',
+                            color: 'var(--ink-0)',
+                          }}
+                        >
                           {avatarInitial(member.displayLabel)}
                         </span>
                       )}
-                      <div className="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[11px] text-white shadow-md group-hover:block">
+                      <div
+                        className="t-tiny pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap px-2 py-1 group-hover:block"
+                        style={{
+                          background: 'var(--ink-3)',
+                          color: 'var(--haze-1)',
+                          borderRadius: 'var(--r-sm)',
+                          boxShadow: 'var(--shadow-md)',
+                        }}
+                      >
                         Rep {member.reputationScore || '0'} | Joined {String(member.joinedGroupsCount ?? 0)}
                       </div>
                     </div>
                     <div className="min-w-0">
                       <OverflowSlider
                         value={`${member.displayLabel}${member.isCurrentUser ? ' (You)' : ''}`}
-                        className="text-xs font-semibold text-slate-900"
+                        className="t-tiny c-1 font-semibold"
                       />
-                      <OverflowSlider value={member.secondaryLabel} className="text-[11px] text-slate-500" />
+                      <OverflowSlider value={member.secondaryLabel} className="t-tiny c-3 t-mono" />
                       {uiPhase === 'bidding' ? (
                         <OverflowSlider
                           value={member.bidAmountLabel ? `Bid: ${member.bidAmountLabel}` : 'Bid: no bid yet'}
-                          className="text-[11px] text-slate-600"
+                          className="t-tiny c-2"
                         />
                       ) : null}
                     </div>
@@ -158,7 +185,7 @@ export function PhaseSupportRail({
               );
             })}
             {visibleMembers.length === 0 ? (
-              <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">No member data.</p>
+              <p className="t-tiny c-3 px-3 py-2" style={memberRowStyle}>No member data.</p>
             ) : null}
           </div>
         ) : null}
@@ -190,15 +217,19 @@ export function PhaseSupportRail({
               const candidateInitAddress = toInitAddress(proposal.candidate) || proposal.candidate;
 
               return (
-                <div key={`${proposal.voteMode}-${proposal.proposalId}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <div
+                  key={`${proposal.voteMode}-${proposal.proposalId}`}
+                  className="px-3 py-2"
+                  style={memberRowStyle}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <OverflowSlider value={candidateLabel} className="text-xs font-semibold text-slate-900" />
-                      <OverflowSlider value={candidateInitAddress} className="text-[11px] font-mono text-slate-500" />
-                      <p className="text-[11px] text-slate-500">{proposalTypeLabel} #{proposal.proposalId}</p>
-                      <p className="text-[11px] text-slate-500">Voter set at open: {proposal.quorumMemberCount}</p>
+                      <OverflowSlider value={candidateLabel} className="t-tiny c-1 font-semibold" />
+                      <OverflowSlider value={candidateInitAddress} className="t-tiny c-3 t-mono" />
+                      <p className="t-tiny c-3">{proposalTypeLabel} #{proposal.proposalId}</p>
+                      <p className="t-tiny c-3">Voter set at open: {proposal.quorumMemberCount}</p>
                     </div>
-                    <p className="whitespace-nowrap text-[11px] font-semibold text-slate-600">
+                    <p className="t-tiny c-2 t-num whitespace-nowrap font-semibold">
                       {proposal.yesVotes}/{proposal.requiredYesVotes} yes
                     </p>
                   </div>
@@ -206,27 +237,37 @@ export function PhaseSupportRail({
                   <div className="mt-2 flex flex-wrap justify-end gap-2">
                     {canVoteNow ? (
                       <>
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="sm"
                           disabled={!isConnected || isActing}
                           onClick={() => onVoteProposal(proposal.proposalId, proposal.voteMode, true)}
-                          className={positiveButtonClass}
+                          style={{
+                            borderColor: 'rgba(16,185,129,0.4)',
+                            color: 'var(--ok-300)',
+                            background: 'var(--ok-bg)',
+                          }}
                         >
                           Yes
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="sm"
                           disabled={!isConnected || isActing}
                           onClick={() => onVoteProposal(proposal.proposalId, proposal.voteMode, false)}
-                          className={warningButtonClass}
+                          style={{
+                            borderColor: 'rgba(245,158,11,0.4)',
+                            color: 'var(--warn-300)',
+                            background: 'var(--warn-bg)',
+                          }}
                         >
                           No
-                        </button>
+                        </Button>
                       </>
                     ) : (
-                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                        {voteStateLabel}
-                      </span>
+                      <span className="chip">{voteStateLabel}</span>
                     )}
                   </div>
                 </div>
@@ -234,7 +275,7 @@ export function PhaseSupportRail({
             })}
 
             {visibleProposals.length === 0 ? (
-              <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+              <p className="t-tiny c-3 px-3 py-2" style={memberRowStyle}>
                 No invites or requests.
               </p>
             ) : null}

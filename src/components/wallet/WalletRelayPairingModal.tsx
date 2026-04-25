@@ -107,40 +107,84 @@ export function WalletRelayPairingModal() {
   }
 
   return (
-    <div className="fixed inset-0 z-[160] grid place-items-center bg-slate-900/55 p-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+    <div
+      className="fixed inset-0 z-[160] grid place-items-center p-4"
+      style={{ background: 'rgba(5,7,13,0.7)', backdropFilter: 'blur(8px)' }}
+    >
+      <div
+        className="w-full max-w-md p-6"
+        style={{
+          background: 'var(--ink-2)',
+          border: '1px solid var(--ink-6)',
+          borderRadius: 'var(--r-xl)',
+          boxShadow: 'var(--shadow-lg), 0 0 60px -10px rgba(40,151,255,0.3)',
+        }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-sky-500">Chainora Relay Pairing</p>
-            <h3 className="mt-1 text-xl font-bold text-slate-900">Connect mobile wallet</h3>
+            <p className="t-label" style={{ color: 'var(--signal-300)' }}>Chainora Relay Pairing</p>
+            <h3 className="t-h3 c-1 mt-1" style={{ fontFamily: 'var(--font-display)' }}>
+              Connect mobile wallet
+            </h3>
           </div>
           <button
             type="button"
             aria-label="Close pairing"
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+            className="rounded-full p-2 transition"
+            style={{ color: 'var(--haze-3)' }}
             onClick={() => walletRelayUiStore.closePairing({ invokeCancel: true })}
+            onMouseEnter={event => {
+              event.currentTarget.style.background = 'var(--ink-3)';
+              event.currentTarget.style.color = 'var(--haze-1)';
+            }}
+            onMouseLeave={event => {
+              event.currentTarget.style.background = 'transparent';
+              event.currentTarget.style.color = 'var(--haze-3)';
+            }}
           >
-            x
+            ×
           </button>
         </div>
 
-        <div className="mt-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-          <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Status</p>
-          <p className={`mt-2 text-sm font-semibold ${state.error ? 'text-rose-600' : 'text-sky-700'}`}>
+        <div
+          className="mt-4 p-4"
+          style={{
+            background: 'var(--ink-1)',
+            border: '1px solid var(--ink-5)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
+          <p className="t-label">Status</p>
+          <p
+            className="t-small mt-2 font-semibold"
+            style={{ color: state.error ? 'var(--risk-300)' : 'var(--signal-300)' }}
+          >
             {statusMessage}
           </p>
-          <div className="mt-3 flex items-center justify-between text-xs text-slate-600">
+          <div className="t-tiny c-3 mt-3 flex items-center justify-between">
             <span>Session duration</span>
-            <span className="font-semibold text-slate-800">{sessionDurationLabel}</span>
+            <span className="t-mono c-1 font-semibold">{sessionDurationLabel}</span>
           </div>
         </div>
 
         <div className="mt-5 grid min-h-[320px] place-items-center">
           {qrImageUrl ? (
-            <img src={qrImageUrl} alt="Wallet relay pairing QR" className="h-[300px] w-[300px] rounded-xl object-contain ring-1 ring-slate-200" />
+            <img
+              src={qrImageUrl}
+              alt="Wallet relay pairing QR"
+              className="h-[300px] w-[300px] object-contain"
+              style={{ background: 'white', borderRadius: 'var(--r-md)' }}
+            />
           ) : (
-            <div className="flex h-[300px] w-[300px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
-              Preparing pairing QR...
+            <div
+              className="flex h-[300px] w-[300px] items-center justify-center text-center"
+              style={{
+                background: 'var(--ink-3)',
+                color: 'var(--haze-3)',
+                borderRadius: 'var(--r-md)',
+              }}
+            >
+              <span className="t-small">Preparing pairing QR...</span>
             </div>
           )}
         </div>

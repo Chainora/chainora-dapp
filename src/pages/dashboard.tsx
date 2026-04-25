@@ -1,6 +1,8 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Button } from '../components/ui/Button';
+import { LoadingCard } from '../components/ui/LoadingCard';
 import {
   CONTRIBUTION_SYMBOL,
   DASHBOARD_FORCE_SYNC_ONCE_KEY,
@@ -9,6 +11,14 @@ import {
   DASHBOARD_PUBLIC_POLL_INTERVAL_MS,
   DASHBOARD_SEARCH_DEBOUNCE_MS,
 } from '../features/dashboard/constants';
+import { DashboardHero } from '../features/dashboard/DashboardHero';
+import {
+  type DashboardSortBy,
+  type DashboardSortOrder,
+} from '../features/dashboard/DashboardFilterBar';
+import { DashboardGroupSection } from '../features/dashboard/DashboardGroupSection';
+import { RefreshToast } from '../features/dashboard/RefreshToast';
+import { useDashboardStats } from '../features/dashboard/useDashboardStats';
 import type { DashboardMode } from '../features/dashboard/types';
 import { DashboardGroupCard, DashboardStats } from '../features/dashboard/ui';
 import {
@@ -33,9 +43,6 @@ const toUnixMs = (value: string | undefined): number => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
-
-type DashboardSortBy = 'created_at' | 'min_reputation';
-type DashboardSortOrder = 'asc' | 'desc';
 
 const toBigIntSafe = (value: string | undefined): bigint => {
   try {
@@ -74,9 +81,32 @@ const sortDashboardGroups = (
     return left.poolId.localeCompare(right.poolId);
   });
 
+const truncateAddress = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.length <= 12) return trimmed;
+  return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
+};
+
+const PAGE_SIZE = 6;
+
+const emptyStateStyle = {
+  background: 'transparent',
+  border: '1px dashed var(--ink-6)',
+  borderRadius: 'var(--r-xl)',
+  padding: '40px 32px',
+} as const;
+
+const emptyIconWrapStyle = {
+  width: 44,
+  height: 44,
+  borderRadius: 10,
+  background: 'var(--ink-3)',
+} as const;
+
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, token, refreshSession } = useAuth();
+  const { isAuthenticated, token, refreshSession, username, address } = useAuth();
 
   const [groups, setGroups] = useState<ApiGroup[]>([]);
   const [mode, setMode] = useState<DashboardMode>('public');
@@ -89,8 +119,14 @@ export function DashboardPage() {
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
+  const [statsRefreshNonce, setStatsRefreshNonce] = useState(0);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const loadSeqRef = useRef(0);
   const wasHiddenRef = useRef(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -151,6 +187,7 @@ export function DashboardPage() {
 
       const nextGroups = sortDashboardGroups(result, sortBy, sortOrder);
       setGroups(previous => (areGroupsEqual(previous, nextGroups) ? previous : nextGroups));
+      setLastUpdatedAt(Date.now());
     } catch (loadError) {
       if (!shouldApply()) {
         return;
@@ -289,138 +326,263 @@ export function DashboardPage() {
     };
   }, [performLoadGroups, token]);
 
-  const lifecycleStatuses = useMemo(() => groups.map(deriveDashboardGroupStatus), [groups]);
-  const activeCount = useMemo(
-    () => lifecycleStatuses.filter(status => status !== 'forming' && status !== 'archived').length,
-    [lifecycleStatuses],
-  );
-  const formingCount = useMemo(
-    () => lifecycleStatuses.filter(status => status === 'forming').length,
-    [lifecycleStatuses],
-  );
-  const totalContributed = useMemo(() => {
-    try {
-      const sum = groups.reduce((acc, item) => acc + BigInt(item.contributionAmount), 0n);
-      return formatAmount(sum.toString());
-    } catch {
-      return `0 ${CONTRIBUTION_SYMBOL}`;
+  const visibleGroups = useMemo(() => {
+    if (mode !== 'public') {
+      return groups;
     }
-  }, [groups]);
+    if (normalizedQuery) {
+      return groups;
+    }
+    return groups.filter(group => deriveDashboardGroupStatus(group) === 'forming');
+  }, [groups, mode, normalizedQuery]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [
+    mode,
+    normalizedQuery,
+    sortBy,
+    sortOrder,
+    normalizedMinReputationFilter,
+    normalizedMaxReputationFilter,
+  ]);
+
+  const totalPages = Math.max(1, Math.ceil(visibleGroups.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pagedGroups = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return visibleGroups.slice(start, start + PAGE_SIZE);
+  }, [visibleGroups, safePage]);
+
+  const stats = useDashboardStats(token, address, statsRefreshNonce);
+
+  const greetingName = useMemo(() => {
+    const trimmedUsername = username?.trim() ?? '';
+    if (trimmedUsername) return trimmedUsername;
+    if (address) return truncateAddress(address);
+    return 'Welcome back';
+  }, [username, address]);
+
+  const handleSearchTrigger = useCallback(() => {
+    setFilterOpen(true);
+  }, []);
+
+  const handleResetFilters = useCallback(() => {
+    setQuery('');
+    setMinReputationFilter('');
+    setMaxReputationFilter('');
+    setSortBy('created_at');
+    setSortOrder('desc');
+  }, []);
+
+  const handleRefresh = useCallback(async () => {
+    setManualRefreshing(true);
+    setStatsRefreshNonce(value => value + 1);
+    try {
+      await performLoadGroups();
+    } finally {
+      setManualRefreshing(false);
+    }
+  }, [performLoadGroups]);
 
   if (!isAuthenticated) {
     return <Navigate to="/" />;
   }
 
+  const contributionPerPeriodLabel = formatAmount(stats.contributionPerPeriod.toString());
+  const bestBidPayoutLabel = formatAmount(stats.bestBidPayoutEstimate.toString());
+  const allChipCount = mode === 'public' ? visibleGroups.length : stats.formingPublicCount;
+  const joinedChipCount = mode === 'joined' ? visibleGroups.length : stats.totalJoinedCount;
+  const heroGroupCount = mode === 'public' ? allChipCount : joinedChipCount;
+  const isFilterActive =
+    Boolean(normalizedQuery)
+      || Boolean(normalizedMinReputationFilter)
+      || Boolean(normalizedMaxReputationFilter)
+      || sortBy !== 'created_at'
+      || sortOrder !== 'desc';
+
   return (
-    <section className="mx-auto max-w-6xl space-y-7">
-      <DashboardStats
-        activeCount={activeCount}
-        formingCount={formingCount}
-        totalContributed={totalContributed}
+    <section className="mx-auto w-full max-w-[1280px] space-y-7 px-6">
+      <RefreshToast visible={manualRefreshing} />
+      <DashboardHero
+        greetingName={greetingName}
+        mode={mode}
+        groupCount={heroGroupCount}
+        lastUpdatedAt={lastUpdatedAt}
+        onSearchFocus={handleSearchTrigger}
+        onCreateGroup={() => {
+          void navigate({ to: '/create-group' });
+        }}
       />
 
-      <div className="flex items-center justify-between">
-        <h1 className="text-4xl font-bold text-slate-900">
-          {mode === 'public' ? 'Public Groups' : 'Groups You Joined'}
-        </h1>
-        <button
-          type="button"
-          onClick={() => {
-            void navigate({ to: '/create-group' });
-          }}
-          className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
-        >
-          + Create Group
-        </button>
-      </div>
+      <DashboardStats
+        activeJoinedCount={stats.activeJoinedCount}
+        contributionPerPeriod={
+          stats.contributionPerPeriod === 0n ? `0 ${CONTRIBUTION_SYMBOL}` : contributionPerPeriodLabel
+        }
+        bestBidPayoutEstimate={
+          stats.bestBidPayoutEstimate === 0n ? `0 ${CONTRIBUTION_SYMBOL}` : bestBidPayoutLabel
+        }
+        invitesPending={stats.invitesPending}
+      />
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <input
-          value={query}
-          onChange={event => setQuery(event.target.value)}
-          placeholder="Search by name, pool id, or pool address"
-          className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
-        />
-        <select
-          value={sortBy}
-          onChange={event => setSortBy(event.target.value as DashboardSortBy)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-        >
-          <option value="created_at">Sort: Created Time</option>
-          <option value="min_reputation">Sort: Min Reputation</option>
-        </select>
-        <select
-          value={sortOrder}
-          onChange={event => setSortOrder(event.target.value as DashboardSortOrder)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-        >
-          <option value="desc">Order: Desc</option>
-          <option value="asc">Order: Asc</option>
-        </select>
-        <input
-          value={minReputationFilter}
-          onChange={event => setMinReputationFilter(event.target.value.replace(/[^\d]/g, ''))}
-          inputMode="numeric"
-          placeholder="Min rep"
-          className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-        />
-        <input
-          value={maxReputationFilter}
-          onChange={event => setMaxReputationFilter(event.target.value.replace(/[^\d]/g, ''))}
-          inputMode="numeric"
-          placeholder="Max rep"
-          className="w-28 rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-        />
-        <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1">
-          <button
-            type="button"
-            onClick={() => setMode('public')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${mode === 'public' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'}`}
+      <DashboardGroupSection
+        mode={mode}
+        onModeChange={setMode}
+        totalCount={allChipCount}
+        joinedCount={joinedChipCount}
+        query={query}
+        onQueryChange={setQuery}
+        sortBy={sortBy}
+        onSortByChange={setSortBy}
+        sortOrder={sortOrder}
+        onSortOrderChange={setSortOrder}
+        minReputation={minReputationFilter}
+        onMinReputationChange={setMinReputationFilter}
+        maxReputation={maxReputationFilter}
+        onMaxReputationChange={setMaxReputationFilter}
+        onRefresh={() => {
+          void handleRefresh();
+        }}
+        searchInputRef={searchInputRef}
+        filterOpen={filterOpen}
+        onFilterOpenChange={setFilterOpen}
+        isRefreshing={manualRefreshing}
+      >
+        {error ? (
+          <div
+            className="t-small c-risk px-4 py-3"
+            style={{
+              background: 'var(--risk-bg)',
+              border: '1px solid rgba(239,68,68,0.4)',
+              borderRadius: 'var(--r-md)',
+              marginBottom: 16,
+            }}
           >
-            Public
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('joined')}
-            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${mode === 'joined' ? 'bg-slate-100 text-slate-900' : 'text-slate-500 hover:bg-slate-50'}`}
+            {error}
+          </div>
+        ) : null}
+
+        {isLoading && !hasLoadedOnce ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <LoadingCard count={6} />
+          </div>
+        ) : null}
+
+        {hasLoadedOnce && visibleGroups.length === 0 ? (
+          <div
+            className="flex flex-col items-center gap-3 text-center"
+            style={emptyStateStyle}
           >
-            Joined
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={() => {
-            void performLoadGroups();
-          }}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600"
-        >
-          Refresh now
-        </button>
-      </div>
+            <span
+              className="inline-flex items-center justify-center"
+              style={emptyIconWrapStyle}
+              aria-hidden="true"
+            >
+              <svg
+                width="22"
+                height="22"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="var(--haze-3)"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M8 2v12M2 8h12" />
+              </svg>
+            </span>
+            <h3 className="t-h4 c-1">No groups found</h3>
+            <p className="t-small c-3" style={{ maxWidth: '36ch' }}>
+              {mode === 'joined'
+                ? 'You have not joined any group yet. Browse public groups or create your own.'
+                : isFilterActive
+                  ? 'No public groups match your search. Try clearing filters or create a new group.'
+                  : 'No public groups are recruiting right now. Search to view groups in other states or create your own.'}
+            </p>
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+              {isFilterActive ? (
+                <Button type="button" variant="ghost" size="sm" onClick={handleResetFilters}>
+                  Reset filters
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  void navigate({ to: '/create-group' });
+                }}
+              >
+                Create group
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
-      {isLoading ? <p className="text-sm text-slate-500">Loading groups...</p> : null}
-      {error ? <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+        {hasLoadedOnce && visibleGroups.length > 0 ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {pagedGroups.map(group => (
+                <DashboardGroupCard
+                  key={group.poolAddress}
+                  group={group}
+                  onOpen={poolId => {
+                    void navigate({
+                      to: '/group/$poolId',
+                      params: { poolId },
+                    });
+                  }}
+                />
+              ))}
+            </div>
 
-      {hasLoadedOnce && groups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-slate-500">
-          No groups found.
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {groups.map(group => (
-            <DashboardGroupCard
-              key={group.poolAddress}
-              group={group}
-              onOpen={poolId => {
-                void navigate({
-                  to: '/group/$poolId',
-                  params: { poolId },
-                });
-              }}
-            />
-          ))}
-        </div>
-      )}
+            {totalPages > 1 ? (
+              <div
+                className="mt-5 flex items-center justify-between gap-3"
+                style={{
+                  background: 'var(--ink-2)',
+                  border: '1px solid var(--ink-5)',
+                  borderRadius: 'var(--r-lg)',
+                  padding: '10px 14px',
+                }}
+              >
+                <p className="t-tiny c-3">
+                  Showing{' '}
+                  <span className="t-mono c-1">
+                    {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, visibleGroups.length)}
+                  </span>{' '}
+                  of <span className="t-mono c-1">{visibleGroups.length}</span>
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage(prev => Math.max(1, prev - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <p className="t-tiny c-2">
+                    Page <span className="t-mono c-1">{safePage}</span> of{' '}
+                    <span className="t-mono c-1">{totalPages}</span>
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </DashboardGroupSection>
     </section>
   );
 }

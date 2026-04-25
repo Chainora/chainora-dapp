@@ -5,24 +5,26 @@ type KyOptionRecord = Record<string, unknown>;
 const hasOwn = (value: object, key: string): boolean =>
   Object.prototype.hasOwnProperty.call(value, key);
 
+// ky 1.x uses `prefixUrl`. Some legacy callers passed `prefix` instead — rename
+// it to `prefixUrl` so ky honors the base URL. Keep `prefixUrl` untouched.
 const normalizeLegacyPrefixOption = <T>(options: T): T => {
   if (!options || typeof options !== 'object') {
     return options;
   }
 
   const raw = options as KyOptionRecord;
-  if (!hasOwn(raw, 'prefixUrl')) {
+  if (!hasOwn(raw, 'prefix')) {
     return options;
   }
 
-  const { prefixUrl, ...rest } = raw;
-  if (hasOwn(raw, 'prefix')) {
+  const { prefix, ...rest } = raw;
+  if (hasOwn(raw, 'prefixUrl')) {
     return rest as T;
   }
 
   return {
     ...rest,
-    prefix: prefixUrl,
+    prefixUrl: prefix,
   } as T;
 };
 

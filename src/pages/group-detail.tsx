@@ -71,8 +71,16 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
 
   if (!detail.group) {
     return (
-      <section className="mx-auto max-w-5xl p-4">
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <section className="mx-auto w-full max-w-[1280px] px-6 py-6">
+        <p
+          className="t-small px-4 py-3"
+          style={{
+            background: 'var(--risk-bg)',
+            color: 'var(--risk-300)',
+            border: '1px solid rgba(239,68,68,0.4)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
           {detail.error || 'Group not found'}
         </p>
       </section>
@@ -87,11 +95,11 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
   return (
     <>
       <section
-        className={`relative mx-auto max-w-6xl -mt-4 ${isCompactViewport ? 'h-[calc(100svh-10.5rem)] overflow-y-auto' : 'space-y-4 pb-6'}`}
+        className={`aurora relative mx-auto w-full max-w-[1280px] px-6 ${
+          isCompactViewport ? 'h-[calc(100svh-10.5rem)] overflow-y-auto pt-4' : 'space-y-4 py-6'
+        }`}
       >
-        <div className="pointer-events-none absolute inset-x-0 -top-10 -z-10 h-72 bg-[radial-gradient(80%_100%_at_15%_0%,rgba(186,230,253,0.62)_0%,rgba(255,255,255,0)_70%),radial-gradient(60%_85%_at_100%_5%,rgba(254,243,199,0.58)_0%,rgba(255,255,255,0)_70%)]" />
-
-        <div className={isCompactViewport ? 'grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-2.5' : 'flex flex-col gap-2.5'}>
+        <div className={isCompactViewport ? 'relative z-10 grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-2.5' : 'relative z-10 flex flex-col gap-2.5'}>
           <DetailTopBar
             isRefreshing={detail.isRefreshing}
             onBack={() => {
@@ -170,9 +178,18 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
 
           {statusMessage ? (
             <p
-              className={`rounded-xl px-3 py-2 text-xs font-semibold ${
-                statusMessage.tone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-sky-50 text-sky-700'
-              }`}
+              className="t-tiny font-semibold px-3 py-2"
+              style={{
+                background:
+                  statusMessage.tone === 'error' ? 'var(--risk-bg)' : 'rgba(40,151,255,0.12)',
+                color:
+                  statusMessage.tone === 'error' ? 'var(--risk-300)' : 'var(--signal-300)',
+                border:
+                  statusMessage.tone === 'error'
+                    ? '1px solid rgba(239,68,68,0.4)'
+                    : '1px solid rgba(40,151,255,0.4)',
+                borderRadius: 'var(--r-md)',
+              }}
             >
               {statusMessage.value}
             </p>
@@ -182,7 +199,7 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
         </div>
       </section>
 
-      <section className="mx-auto mt-2 max-w-6xl pb-6">
+      <section className="mx-auto mt-2 w-full max-w-[1280px] px-6 pb-6">
         <div className="relative z-10">
           <GroupHistoryTable rows={detail.historyRows} />
         </div>

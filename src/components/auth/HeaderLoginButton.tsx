@@ -173,7 +173,14 @@ export function HeaderLoginButton() {
         <div className="relative" ref={avatarMenuRef}>
           <button
             type="button"
-            className={`inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-200 text-xs font-semibold text-slate-600 transition hover:border-sky-300 ${resolvedAvatarUrl ? 'bg-white' : 'bg-gradient-to-br from-slate-100 to-slate-200'}`}
+            className="t-tiny inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full font-semibold transition"
+            style={{
+              background: resolvedAvatarUrl
+                ? 'var(--ink-2)'
+                : 'linear-gradient(135deg, var(--signal-400), var(--arc-400))',
+              border: '1px solid var(--ink-5)',
+              color: resolvedAvatarUrl ? 'var(--haze-2)' : 'var(--ink-0)',
+            }}
             aria-label="User menu"
             aria-haspopup="menu"
             aria-expanded={isAvatarMenuOpen}
@@ -187,20 +194,44 @@ export function HeaderLoginButton() {
           </button>
 
           {isAvatarMenuOpen ? (
-            <div className="absolute right-0 top-full z-[150] mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+            <div
+              className="absolute right-0 top-full z-[150] mt-2 w-44 p-2"
+              style={{
+                background: 'var(--ink-2)',
+                border: '1px solid var(--ink-5)',
+                borderRadius: 'var(--r-md)',
+                boxShadow: 'var(--shadow-lg)',
+              }}
+            >
               <Link
                 to="/profile"
-                className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                className="t-small c-2 block rounded-[var(--r-sm)] px-3 py-2 font-medium transition"
                 onClick={() => setIsAvatarMenuOpen(false)}
+                onMouseEnter={event => {
+                  event.currentTarget.style.background = 'var(--ink-3)';
+                  event.currentTarget.style.color = 'var(--haze-1)';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.background = 'transparent';
+                  event.currentTarget.style.color = 'var(--haze-2)';
+                }}
               >
                 Profile
               </Link>
               <button
                 type="button"
-                className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                className="t-small c-2 mt-1 w-full rounded-[var(--r-sm)] px-3 py-2 text-left font-medium transition"
                 onClick={() => {
                   setIsAvatarMenuOpen(false);
                   void handleLogout();
+                }}
+                onMouseEnter={event => {
+                  event.currentTarget.style.background = 'var(--ink-3)';
+                  event.currentTarget.style.color = 'var(--haze-1)';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.background = 'transparent';
+                  event.currentTarget.style.color = 'var(--haze-2)';
                 }}
               >
                 Logout
@@ -220,15 +251,16 @@ export function HeaderLoginButton() {
     <div className="flex flex-col items-end gap-1">
       <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={() => {
           void handleLogin();
         }}
         disabled={loading}
-        className="bg-gradient-to-r from-sky-600 to-cyan-500 text-white hover:from-sky-500 hover:to-cyan-400 disabled:opacity-70"
       >
         {loading ? 'Signing...' : 'Login with Chainora Card'}
       </Button>
-      {error ? <p className="text-xs font-medium text-rose-600">{error}</p> : null}
+      {error ? <p className="t-tiny c-risk font-medium">{error}</p> : null}
     </div>
   );
 }

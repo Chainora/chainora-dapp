@@ -20,10 +20,10 @@ function RootLayout() {
   }, [isAuthenticated, location.pathname, syncProfile]);
 
   return (
-    <div className="min-h-screen bg-chainora-bg">
+    <div className="min-h-screen" style={{ background: 'var(--ink-0)' }}>
       <AppHeader />
 
-      <main className="mx-auto max-w-6xl px-6 py-8">
+      <main className="mx-auto w-full max-w-[1280px] px-6 py-8">
         <Outlet />
       </main>
 

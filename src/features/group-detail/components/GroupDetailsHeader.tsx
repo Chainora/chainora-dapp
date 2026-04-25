@@ -81,6 +81,12 @@ const getPhaseWindow = (
   }
 };
 
+const innerCardStyle = {
+  background: 'var(--ink-1)',
+  border: '1px solid var(--ink-5)',
+  borderRadius: 'var(--r-md)',
+} as const;
+
 export function GroupDetailsHeader({
   group,
   groupStatus,
@@ -116,11 +122,18 @@ export function GroupDetailsHeader({
   ];
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-3">
+    <article className="card-raised p-3">
       <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-stretch">
-        <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+        <div className="min-w-0 px-3 py-2.5" style={innerCardStyle}>
           <div className="flex items-start gap-3">
-            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div
+              className="relative h-14 w-14 shrink-0 overflow-hidden"
+              style={{
+                background: 'var(--ink-2)',
+                border: '1px solid var(--ink-5)',
+                borderRadius: 'var(--r-md)',
+              }}
+            >
               {group.groupImageUrl ? (
                 <img
                   src={group.groupImageUrl}
@@ -129,7 +142,10 @@ export function GroupDetailsHeader({
                   className="h-full w-full object-contain object-center"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-sm font-black text-slate-600">
+                <div
+                  className="flex h-full w-full items-center justify-center text-sm font-black"
+                  style={{ color: 'var(--haze-2)', fontFamily: 'var(--font-display)' }}
+                >
                   {avatarInitial(group.name)}
                 </div>
               )}
@@ -137,37 +153,48 @@ export function GroupDetailsHeader({
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <h1 className="truncate text-lg font-black tracking-tight text-slate-900 md:text-xl">{group.name}</h1>
+                <h1 className="t-h3 c-1 truncate" style={{ fontFamily: 'var(--font-display)' }}>
+                  {group.name}
+                </h1>
                 <StatusBadge label={lifecycleLabel(groupStatus)} tone={lifecycleTone(groupStatus)} />
                 <StatusBadge label={group.publicRecruitment ? 'Public' : 'Private'} tone="default" />
               </div>
-              <p className="mt-1 break-all text-[11px] font-mono text-slate-500">Pool: {group.poolAddress}</p>
+              <p className="t-mono c-3 mt-1 break-all text-[11px]">Pool: {group.poolAddress}</p>
             </div>
           </div>
 
           <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
             {stats.map(item => (
-              <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">{item.label}</p>
-                <p className="mt-0.5 text-xs font-bold text-slate-900">{item.value}</p>
+              <div key={item.label} className="px-2.5 py-1.5" style={innerCardStyle}>
+                <p className="t-label" style={{ fontSize: '10px' }}>
+                  {item.label}
+                </p>
+                <p className="t-tiny c-1 mt-0.5 font-bold">{item.value}</p>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-sky-50 via-white to-indigo-50 px-3 py-2.5">
+        <div
+          className="px-3 py-2.5"
+          style={{
+            background: 'linear-gradient(135deg, rgba(40,151,255,0.08) 0%, rgba(34,211,238,0.06) 100%)',
+            border: '1px solid var(--ink-5)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Current Period</p>
-              <p className="text-sm font-bold text-slate-900">#{activePeriod}</p>
+              <p className="t-label" style={{ fontSize: '10px' }}>Current Period</p>
+              <p className="t-small c-1 font-bold">#{activePeriod}</p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Active Phase</p>
-              <p className="text-sm font-bold text-slate-900">{phaseLabel(activePhase)}</p>
+              <p className="t-label" style={{ fontSize: '10px' }}>Active Phase</p>
+              <p className="t-small c-1 font-bold">{phaseLabel(activePhase)}</p>
             </div>
           </div>
 
-          <div className="mt-2.5 rounded-lg border border-slate-200 bg-white/90 px-2.5 py-2">
+          <div className="mt-2.5 px-2.5 py-2" style={innerCardStyle}>
             <PhaseCountdown
               phaseStatus={phaseStatus}
               countdownSeconds={countdownSeconds}
@@ -177,13 +204,13 @@ export function GroupDetailsHeader({
           </div>
 
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Phase Start</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-slate-900">{formatDateTime(phaseWindow.startAt)}</p>
+            <div className="px-2.5 py-1.5" style={innerCardStyle}>
+              <p className="t-label" style={{ fontSize: '10px' }}>Phase Start</p>
+              <p className="t-tiny c-1 mt-0.5 font-semibold">{formatDateTime(phaseWindow.startAt)}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Phase End</p>
-              <p className="mt-0.5 text-[11px] font-semibold text-slate-900">{formatDateTime(phaseWindow.endAt)}</p>
+            <div className="px-2.5 py-1.5" style={innerCardStyle}>
+              <p className="t-label" style={{ fontSize: '10px' }}>Phase End</p>
+              <p className="t-tiny c-1 mt-0.5 font-semibold">{formatDateTime(phaseWindow.endAt)}</p>
             </div>
           </div>
         </div>

@@ -3,13 +3,17 @@ import type {
   ApiGroupViewPeriodMeta,
 } from '../../../services/groupsService';
 import type { GroupStatus } from '../../../services/groupStatus';
+import { Button } from '../../../components/ui/Button';
 import { compactPhaseLabel, type CompactUiPhase } from '../compactConfig';
 import type { PhasePermissionViewModel } from '../hooks/usePhasePermissions';
 import { formatToken } from '../utils';
 import { StatusBadge } from './StatusBadge';
 
-const primaryButtonClass =
-  'inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60';
+const innerSurfaceStyle = {
+  background: 'var(--ink-1)',
+  border: '1px solid var(--ink-5)',
+  borderRadius: 'var(--r-md)',
+} as const;
 
 export function PhasePrimaryPanel({
   uiPhase,
@@ -85,73 +89,80 @@ export function PhasePrimaryPanel({
 
   if (uiPhase === 'forming') {
     return (
-      <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
+      <article className="card-raised flex h-full flex-col p-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold text-slate-900">Forming Workspace</h2>
+          <h2 className="t-h4 c-1">Forming Workspace</h2>
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="warning" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="t-small c-2 mt-2">
           {isViewerMember
             ? 'Group is collecting members. Invite candidates here and monitor votes in support rail.'
             : 'Group is forming. Request to join if recruitment is still open.'}
         </p>
 
-        <div className="mt-auto space-y-3">
+        <div className="mt-auto space-y-3 pt-4">
           {isViewerMember ? (
             <>
               <input
                 value={candidateAddress}
                 onChange={event => onCandidateAddressChange(event.target.value)}
                 placeholder="Candidate username / init / 0x wallet"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700"
+                className="input"
               />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 disabled={!isConnected || isActing || !canProposeInvite || candidateAddress.trim() === ''}
                 onClick={() => onProposeInvite(candidateAddress)}
                 title={inviteDisabledReason || undefined}
-                className={`w-full ${primaryButtonClass}`}
+                className="w-full"
               >
                 {isActing ? 'Preparing...' : 'Invite Candidate'}
-              </button>
-              {inviteDisabledReason ? (
-                <p className="text-xs text-slate-500">{inviteDisabledReason}</p>
-              ) : null}
-              <button
+              </Button>
+              {inviteDisabledReason ? <p className="t-tiny c-3">{inviteDisabledReason}</p> : null}
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={!canLeaveDuringForming || isActing}
                 onClick={onLeaveDuringForming}
                 title={!canLeaveDuringForming ? 'Leave is only available while group is forming.' : undefined}
-                className="w-full rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full"
+                style={{
+                  borderColor: 'rgba(239,68,68,0.4)',
+                  color: 'var(--risk-300)',
+                  background: 'var(--risk-bg)',
+                }}
               >
                 {isActing ? 'Preparing...' : 'Out Group'}
-              </button>
+              </Button>
             </>
           ) : null}
 
           {!isViewerMember && canConfirmJoin ? (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               disabled={isActing}
               onClick={onConfirmJoin}
-              className={`w-full ${primaryButtonClass}`}
+              className="w-full"
             >
               {isActing ? 'Preparing...' : confirmJoinLabel}
-            </button>
+            </Button>
           ) : null}
           {!isViewerMember && !canConfirmJoin ? (
-            <button
+            <Button
               type="button"
+              variant="secondary"
               disabled={!canRequestJoin || isActing}
               onClick={onRequestJoin}
               title={!canRequestJoin ? requestJoinDisabledReason : undefined}
-              className={`w-full ${primaryButtonClass}`}
+              className="w-full"
             >
               {isActing ? 'Preparing...' : 'Request to Join'}
-            </button>
+            </Button>
           ) : null}
           {!isViewerMember && !canConfirmJoin && !canRequestJoin ? (
-            <p className="text-xs text-slate-500">{requestJoinDisabledReason}</p>
+            <p className="t-tiny c-3">{requestJoinDisabledReason}</p>
           ) : null}
         </div>
       </article>
@@ -160,33 +171,34 @@ export function PhasePrimaryPanel({
 
   if (uiPhase === 'funding') {
     return (
-      <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
+      <article className="card-raised flex h-full flex-col p-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold text-slate-900">Funding Workspace</h2>
+          <h2 className="t-h4 c-1">Funding Workspace</h2>
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">Contribute for this period and keep the pool moving.</p>
+        <p className="t-small c-2 mt-2">Contribute for this period and keep the pool moving.</p>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Contribution amount</p>
-          <p className="mt-1 text-base font-bold text-slate-900">{contributionLabel}</p>
-          <p className="mt-1 text-xs text-slate-600">
+        <div className="mt-4 p-3" style={innerSurfaceStyle}>
+          <p className="t-label">Contribution amount</p>
+          <p className="t-body c-1 t-num mt-1 font-bold">{contributionLabel}</p>
+          <p className="t-tiny c-3 mt-1">
             Paid members: {paidCount}/{totalMembers}
           </p>
         </div>
 
-        <div className="mt-auto space-y-2">
-          <button
+        <div className="mt-auto space-y-2 pt-4">
+          <Button
             type="button"
+            variant="secondary"
             disabled={!permissions.canContribute || isActing}
             onClick={onContribute}
             title={!permissions.canContribute ? permissions.disabledReason : undefined}
-            className={`w-full ${primaryButtonClass}`}
+            className="w-full"
           >
             {isActing ? 'Preparing...' : 'Contribute'}
-          </button>
+          </Button>
           {!permissions.canContribute && permissions.disabledReason ? (
-            <p className="text-xs text-slate-500">{permissions.disabledReason}</p>
+            <p className="t-tiny c-3">{permissions.disabledReason}</p>
           ) : null}
         </div>
       </article>
@@ -197,18 +209,16 @@ export function PhasePrimaryPanel({
     const canPrimaryBid = permissions.canBid;
 
     return (
-      <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
+      <article className="card-raised flex h-full flex-col p-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold text-slate-900">Bidding Workspace</h2>
+          <h2 className="t-h4 c-1">Bidding Workspace</h2>
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">
-          Submit your discount bid for this period auction.
-        </p>
+        <p className="t-small c-2 mt-2">Submit your discount bid for this period auction.</p>
 
         {canPrimaryBid ? (
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <label htmlFor="compact-bid-discount" className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+          <div className="mt-4 p-3" style={innerSurfaceStyle}>
+            <label htmlFor="compact-bid-discount" className="t-label">
               Discount bid
             </label>
             <input
@@ -217,25 +227,28 @@ export function PhasePrimaryPanel({
               onChange={event => onBidDiscountChange(event.target.value)}
               inputMode="numeric"
               placeholder="Enter discount"
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+              className="input mt-2"
             />
-            <p className="mt-2 text-xs text-slate-600">Best discount now: {bestDiscount}</p>
-            <p className="text-xs text-slate-500">Your bid must be greater than current best discount.</p>
+            <p className="t-tiny c-3 mt-2">
+              Best discount now: <span className="t-mono c-1">{bestDiscount}</span>
+            </p>
+            <p className="t-tiny c-3">Your bid must be greater than current best discount.</p>
           </div>
         ) : null}
 
-        <div className="mt-auto space-y-2">
-          <button
+        <div className="mt-auto space-y-2 pt-4">
+          <Button
             type="button"
+            variant="secondary"
             disabled={!canPrimaryBid || isActing}
             onClick={onSubmitBid}
             title={!canPrimaryBid ? permissions.disabledReason : undefined}
-            className={`w-full ${primaryButtonClass}`}
+            className="w-full"
           >
             {isActing ? 'Preparing...' : 'Submit Bid'}
-          </button>
+          </Button>
           {!canPrimaryBid && permissions.disabledReason ? (
-            <p className="text-xs text-slate-500">{permissions.disabledReason}</p>
+            <p className="t-tiny c-3">{permissions.disabledReason}</p>
           ) : null}
         </div>
       </article>
@@ -244,32 +257,33 @@ export function PhasePrimaryPanel({
 
   if (uiPhase === 'payout') {
     return (
-      <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
+      <article className="card-raised flex h-full flex-col p-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold text-slate-900">Payout Workspace</h2>
+          <h2 className="t-h4 c-1">Payout Workspace</h2>
           <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">
+        <p className="t-small c-2 mt-2">
           Recipient claims payout in this phase. If recipient does not claim before period end, ending phase can finalize and auto-transfer payout.
         </p>
 
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Payout amount</p>
-          <p className="mt-1 text-base font-bold text-slate-900">{formatToken(periodMeta?.payoutAmount ?? '0')}</p>
+        <div className="mt-4 p-3" style={innerSurfaceStyle}>
+          <p className="t-label">Payout amount</p>
+          <p className="t-body c-1 t-num mt-1 font-bold">{formatToken(periodMeta?.payoutAmount ?? '0')}</p>
         </div>
 
-        <div className="mt-auto space-y-2">
-          <button
+        <div className="mt-auto space-y-2 pt-4">
+          <Button
             type="button"
+            variant="secondary"
             disabled={!permissions.canClaim || isActing}
             onClick={onClaim}
             title={!permissions.canClaim ? permissions.disabledReason : undefined}
-            className={`w-full ${primaryButtonClass}`}
+            className="w-full"
           >
             {isActing ? 'Preparing...' : 'Claim Payout'}
-          </button>
+          </Button>
           {!permissions.canClaim && permissions.disabledReason ? (
-            <p className="text-xs text-slate-500">{permissions.disabledReason}</p>
+            <p className="t-tiny c-3">{permissions.disabledReason}</p>
           ) : null}
         </div>
       </article>
@@ -278,34 +292,46 @@ export function PhasePrimaryPanel({
 
   if (groupStatus === 'voting_extension') {
     return (
-      <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
+      <article className="card-raised flex h-full flex-col p-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-bold text-slate-900">Extension Decision</h2>
+          <h2 className="t-h4 c-1">Extension Decision</h2>
           <StatusBadge label="Voting Extension" tone="warning" />
         </div>
-        <p className="mt-2 text-sm text-slate-600">Choose whether to continue a new cycle or end and archive.</p>
+        <p className="t-small c-2 mt-2">Choose whether to continue a new cycle or end and archive.</p>
 
-        <div className="mt-auto grid gap-2">
-          <button
+        <div className="mt-auto grid gap-2 pt-4">
+          <Button
             type="button"
+            variant="ghost"
             disabled={!permissions.canVoteContinue || isActing}
             onClick={onVoteContinue}
             title={!permissions.canVoteContinue ? permissions.disabledReason : undefined}
-            className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full"
+            style={{
+              borderColor: 'rgba(16,185,129,0.4)',
+              color: 'var(--ok-300)',
+              background: 'var(--ok-bg)',
+            }}
           >
             {isActing ? 'Preparing...' : 'Vote Continue'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
             disabled={!permissions.canVoteEnd || isActing}
             onClick={onVoteEnd}
             title={!permissions.canVoteEnd ? permissions.disabledReason : undefined}
-            className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full"
+            style={{
+              borderColor: 'rgba(245,158,11,0.4)',
+              color: 'var(--warn-300)',
+              background: 'var(--warn-bg)',
+            }}
           >
             {isActing ? 'Preparing...' : 'Vote End'}
-          </button>
+          </Button>
           {!permissions.canVoteContinue && !permissions.canVoteEnd && permissions.disabledReason ? (
-            <p className="text-xs text-slate-500">{permissions.disabledReason}</p>
+            <p className="t-tiny c-3">{permissions.disabledReason}</p>
           ) : null}
         </div>
       </article>
@@ -313,27 +339,28 @@ export function PhasePrimaryPanel({
   }
 
   return (
-    <article className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-5">
+    <article className="card-raised flex h-full flex-col p-5">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-lg font-bold text-slate-900">Ending Workspace</h2>
+        <h2 className="t-h4 c-1">Ending Workspace</h2>
         <StatusBadge label={compactPhaseLabel(uiPhase)} tone="info" />
       </div>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="t-small c-2 mt-2">
         Any active member can sync runtime after payout deadline. This transition auto-settles unclaimed payout to recipient, then opens the next period.
       </p>
 
-      <div className="mt-auto space-y-2">
-        <button
+      <div className="mt-auto space-y-2 pt-4">
+        <Button
           type="button"
+          variant="secondary"
           disabled={!permissions.canFinalize || isActing}
           onClick={onFinalize}
           title={!permissions.canFinalize ? permissions.disabledReason : undefined}
-          className={`w-full ${primaryButtonClass}`}
+          className="w-full"
         >
           {isActing ? 'Preparing...' : 'Sync Runtime'}
-        </button>
+        </Button>
         {!permissions.canFinalize && permissions.disabledReason ? (
-          <p className="text-xs text-slate-500">{permissions.disabledReason}</p>
+          <p className="t-tiny c-3">{permissions.disabledReason}</p>
         ) : null}
       </div>
     </article>

@@ -83,11 +83,8 @@ export function UserDetail({ username, address }: UserDetailProps) {
       : shortenAddress(address ?? '');
 
   return (
-    <div
-      className="inline-flex items-center rounded-full border border-black bg-white px-3 py-1"
-      title={initTooltip || undefined}
-    >
-      <span className="text-xs font-extrabold uppercase tracking-[0.14em] text-black">{label || 'Unknown User'}</span>
+    <div className="chip chip-mono" title={initTooltip || undefined}>
+      <span className="t-tiny font-semibold uppercase tracking-[0.14em]">{label || 'Unknown User'}</span>
     </div>
   );
 }

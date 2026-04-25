@@ -14,6 +14,7 @@ import {
   createUsernameRelayerPayload,
   submitUsernameRelayerRequest,
 } from '../services/usernameRelayer';
+import { Button } from '../components/ui/Button';
 import { toInitAddress } from '../components/UserDetail';
 
 type ProfileResponse = {
@@ -347,29 +348,39 @@ export function ProfilePage() {
   }
 
   return (
-    <section className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 className="text-2xl font-semibold text-slate-900">Profile</h1>
-      <p className="mt-2 text-slate-600">Manage your Chainora account profile.</p>
+    <section className="card-raised mx-auto w-full max-w-3xl p-8">
+      <h1 className="t-h2 c-1" style={{ fontFamily: 'var(--font-display)' }}>
+        Profile
+      </h1>
+      <p className="t-body c-2 mt-2">Manage your Chainora account profile.</p>
 
-      {loading ? <p className="mt-6 text-sm text-slate-500">Loading profile...</p> : null}
-      {!loading && refreshingProfile ? <p className="mt-6 text-sm text-slate-500">Syncing profile...</p> : null}
-      {error ? <p className="mt-4 text-sm text-rose-600">{error}</p> : null}
-      {notice ? <p className="mt-4 text-sm text-emerald-600">{notice}</p> : null}
+      {loading ? <p className="t-small c-3 mt-6">Loading profile...</p> : null}
+      {!loading && refreshingProfile ? <p className="t-small c-3 mt-6">Syncing profile...</p> : null}
+      {error ? <p className="t-small c-risk mt-4">{error}</p> : null}
+      {notice ? <p className="t-small c-ok mt-4">{notice}</p> : null}
 
       {profile ? (
         <div className="mt-6 space-y-5">
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-wider text-slate-500">Avatar</p>
+          <div className="card p-4">
+            <p className="t-label">Avatar</p>
             <div className="mt-3 flex items-center gap-4">
               {profile.avatarUrl ? (
-                <img src={profile.avatarUrl} alt="Profile avatar" className="h-20 w-20 rounded-full object-cover ring-2 ring-slate-200" />
+                <img
+                  src={profile.avatarUrl}
+                  alt="Profile avatar"
+                  className="h-20 w-20 rounded-full object-cover"
+                  style={{ boxShadow: '0 0 0 2px var(--ink-5)' }}
+                />
               ) : (
-                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                <div
+                  className="t-tiny c-3 flex h-20 w-20 items-center justify-center rounded-full font-semibold"
+                  style={{ background: 'var(--ink-3)', border: '1px solid var(--ink-5)' }}
+                >
                   No avatar
                 </div>
               )}
               <div className="space-y-2">
-                <label className="inline-flex cursor-pointer items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-sky-700">
+                <label className="btn btn-signal btn-sm cursor-pointer">
                   {uploadingAvatar ? 'Uploading...' : 'Upload avatar'}
                   <input
                     type="file"
@@ -381,28 +392,32 @@ export function ProfilePage() {
                     }}
                   />
                 </label>
-                <p className="text-xs text-slate-500">Image will be auto-resized and compressed before upload.</p>
+                <p className="t-tiny c-3">Image will be auto-resized and compressed before upload.</p>
               </div>
             </div>
           </div>
 
-          <div className="rounded-xl bg-slate-50 p-4">
-            <p className="text-xs uppercase tracking-wider text-slate-500">Wallet</p>
-            <p className="mt-1 text-sm font-medium text-slate-900 break-all">{toInitAddress(profile.address).toUpperCase() || profile.address}</p>
-            <p className="mt-1 text-xs text-slate-500 break-all">EVM: {profile.address}</p>
+          <div className="card p-4">
+            <p className="t-label">Wallet</p>
+            <p className="t-small c-1 t-mono mt-1 break-all font-medium">
+              {toInitAddress(profile.address).toUpperCase() || profile.address}
+            </p>
+            <p className="t-tiny c-3 t-mono mt-1 break-all">EVM: {profile.address}</p>
           </div>
 
           <div>
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">Username</p>
-              <p className="mt-1 text-sm font-medium text-slate-900">
+            <div className="card p-4">
+              <p className="t-label">Username</p>
+              <p className="t-small c-1 mt-1 font-medium">
                 {normalizeProfileUsername(profile.username) || 'Not registered yet'}
               </p>
             </div>
 
-            <button
+            <Button
               type="button"
-              className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-60"
+              variant="primary"
+              size="sm"
+              className="mt-3"
               onClick={() => {
                 setError('');
                 setNotice('');
@@ -411,8 +426,8 @@ export function ProfilePage() {
               disabled={loading || hasUsername || showRegisterForm}
             >
               Register Username
-            </button>
-            <p className="mt-1 text-xs text-slate-600">
+            </Button>
+            <p className="t-tiny c-3 mt-1">
               {hasUsername ? 'This account already has a username.' : 'Available for accounts without username.'}
             </p>
 
@@ -420,16 +435,17 @@ export function ProfilePage() {
               <div className="mt-3 flex items-center gap-2">
                 <input
                   id="username-input"
-                  className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                  className="input flex-1"
                   value={registerUsername}
                   onChange={event => setRegisterUsername(event.target.value)}
                   placeholder="Enter username"
                   maxLength={20}
                   disabled={registering}
                 />
-                <button
+                <Button
                   type="button"
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-sky-600 text-lg font-semibold text-white transition hover:bg-sky-700 disabled:opacity-60"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => {
                     void handleRegisterUsername();
                   }}
@@ -437,38 +453,64 @@ export function ProfilePage() {
                   aria-label="Confirm username registration"
                 >
                   {registering ? '…' : '✓'}
-                </button>
+                </Button>
               </div>
             ) : null}
-
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">tCNR</p>
-              <p className="mt-1 text-xl font-semibold text-slate-900">
+            <div className="card p-4">
+              <p className="t-label">tCNR</p>
+              <p className="t-mono c-1 mt-1 text-xl font-semibold">
                 {loadingBalance ? 'Loading...' : `${chainoraBalance} ${tcnrSymbol}`}
               </p>
             </div>
-            <div className="rounded-xl bg-indigo-50 p-4 ring-1 ring-indigo-200">
-              <p className="text-xs uppercase tracking-wider text-indigo-700">Reputation</p>
-              <p className="mt-1 text-xl font-semibold text-indigo-800">{reputationLabel}</p>
+            <div
+              className="p-4"
+              style={{
+                background: 'rgba(40,151,255,0.08)',
+                border: '1px solid rgba(40,151,255,0.4)',
+                borderRadius: 'var(--r-xl)',
+              }}
+            >
+              <p className="t-label" style={{ color: 'var(--signal-300)' }}>Reputation</p>
+              <p className="t-num c-1 mt-1 text-xl font-semibold" style={{ color: 'var(--signal-200)' }}>
+                {reputationLabel}
+              </p>
             </div>
-            <div className="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
-              <p className="text-xs uppercase tracking-wider text-emerald-700">{stablecoinSymbol}</p>
-              <p className="mt-1 text-xl font-semibold text-emerald-800">
+            <div
+              className="p-4"
+              style={{
+                background: 'var(--ok-bg)',
+                border: '1px solid rgba(16,185,129,0.4)',
+                borderRadius: 'var(--r-xl)',
+              }}
+            >
+              <p className="t-label" style={{ color: 'var(--ok-300)' }}>{stablecoinSymbol}</p>
+              <p className="t-mono mt-1 text-xl font-semibold" style={{ color: 'var(--ok-300)' }}>
                 {loadingBalance ? 'Loading...' : stablecoinError ? 'Unavailable' : `${stablecoinBalance} ${stablecoinSymbol}`}
               </p>
               {stablecoinError ? (
-                <p className="mt-1 text-xs text-emerald-700">{stablecoinError}</p>
+                <p className="t-tiny mt-1" style={{ color: 'var(--ok-300)' }}>{stablecoinError}</p>
               ) : stablecoinAddress ? (
-                <p className="mt-1 text-xs text-emerald-700 break-all">Token: {stablecoinAddress}</p>
+                <p className="t-tiny t-mono mt-1 break-all" style={{ color: 'var(--ok-300)' }}>
+                  Token: {stablecoinAddress}
+                </p>
               ) : null}
             </div>
-            <div className="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
-              <p className="text-xs uppercase tracking-wider text-amber-700">KYC</p>
-              <p className="mt-1 text-sm font-semibold text-amber-800">Coming soon (unavailable)</p>
-              <p className="mt-1 text-xs text-amber-700">Status: {profile.kycStatus}</p>
+            <div
+              className="p-4"
+              style={{
+                background: 'var(--warn-bg)',
+                border: '1px solid rgba(245,158,11,0.4)',
+                borderRadius: 'var(--r-xl)',
+              }}
+            >
+              <p className="t-label" style={{ color: 'var(--warn-300)' }}>KYC</p>
+              <p className="t-small mt-1 font-semibold" style={{ color: 'var(--warn-300)' }}>
+                Coming soon (unavailable)
+              </p>
+              <p className="t-tiny mt-1" style={{ color: 'var(--warn-300)' }}>Status: {profile.kycStatus}</p>
             </div>
           </div>
         </div>

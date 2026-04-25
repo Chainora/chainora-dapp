@@ -1,20 +1,25 @@
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
   min-height: 100vh;
-  background: #f8fafc;
-}
-
-.landing-hero {
-  background:
-    radial-gradient(120% 120% at 0% 0%, rgba(186, 230, 253, 0.55) 0%, rgba(255, 255, 255, 0) 60%),
-    radial-gradient(100% 100% at 100% 0%, rgba(224, 242, 254, 0.55) 0%, rgba(255, 255, 255, 0) 55%),
-    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-  border: 1px solid #e2e8f0;
+  background: var(--ink-0);
+  color: var(--haze-1);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }

@@ -294,7 +294,10 @@ export function NotificationBell() {
 
     const label = unreadCount > 99 ? '99+' : String(unreadCount);
     return (
-      <span className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+      <span
+        className="absolute -right-1 -top-1 inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold text-white"
+        style={{ background: 'var(--risk-500)' }}
+      >
         {label}
       </span>
     );
@@ -315,7 +318,22 @@ export function NotificationBell() {
             void prefetchFirstPage();
           }
         }}
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-600"
+        className="relative inline-flex h-10 w-10 items-center justify-center rounded-full transition"
+        style={{
+          background: 'var(--ink-2)',
+          border: '1px solid var(--ink-5)',
+          color: 'var(--haze-2)',
+        }}
+        onMouseEnter={event => {
+          event.currentTarget.style.background = 'var(--ink-3)';
+          event.currentTarget.style.color = 'var(--haze-1)';
+          event.currentTarget.style.borderColor = 'rgba(40,151,255,0.4)';
+        }}
+        onMouseLeave={event => {
+          event.currentTarget.style.background = 'var(--ink-2)';
+          event.currentTarget.style.color = 'var(--haze-2)';
+          event.currentTarget.style.borderColor = 'var(--ink-5)';
+        }}
         aria-label="Notifications"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">

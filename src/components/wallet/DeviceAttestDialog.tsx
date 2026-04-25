@@ -20,24 +20,53 @@ export function DeviceAttestDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/60 p-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+    <div
+      className="fixed inset-0 z-50 grid place-items-center p-4"
+      style={{ background: 'rgba(5,7,13,0.7)', backdropFilter: 'blur(8px)' }}
+    >
+      <div
+        className="w-full max-w-md p-6"
+        style={{
+          background: 'var(--ink-2)',
+          border: '1px solid var(--ink-6)',
+          borderRadius: 'var(--r-xl)',
+          boxShadow: 'var(--shadow-lg), 0 0 60px -10px rgba(40,151,255,0.3)',
+        }}
+      >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs uppercase tracking-[0.16em] text-sky-500">Device Attestation</p>
-            <h3 className="mt-1 text-lg font-bold text-slate-900">Verify your card device</h3>
+            <p className="t-label" style={{ color: 'var(--signal-300)' }}>Device Attestation</p>
+            <h3 className="t-h3 c-1 mt-1" style={{ fontFamily: 'var(--font-display)' }}>
+              Verify your card device
+            </h3>
           </div>
           <button
             type="button"
-            className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+            className="rounded-full p-2 transition"
+            style={{ color: 'var(--haze-3)' }}
+            onMouseEnter={event => {
+              event.currentTarget.style.background = 'var(--ink-3)';
+              event.currentTarget.style.color = 'var(--haze-1)';
+            }}
+            onMouseLeave={event => {
+              event.currentTarget.style.background = 'transparent';
+              event.currentTarget.style.color = 'var(--haze-3)';
+            }}
             onClick={onClose}
             aria-label="Close attestation dialog"
           >
-            x
+            ×
           </button>
         </div>
 
-        <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm font-medium text-slate-700 ring-1 ring-slate-200">
+        <p
+          className="t-small c-2 mt-4 p-3 font-medium"
+          style={{
+            background: 'var(--ink-1)',
+            border: '1px solid var(--ink-5)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
           {statusMessage}
         </p>
 
@@ -46,11 +75,19 @@ export function DeviceAttestDialog({
             <img
               src={qrImageUrl}
               alt="Device attestation QR"
-              className="h-[280px] w-[280px] rounded-xl object-contain ring-1 ring-slate-200"
+              className="h-[280px] w-[280px] object-contain"
+              style={{ background: 'white', borderRadius: 'var(--r-md)' }}
             />
           ) : (
-            <div className="grid h-[280px] w-[280px] place-items-center rounded-xl bg-slate-100 text-sm text-slate-500">
-              Preparing QR...
+            <div
+              className="grid h-[280px] w-[280px] place-items-center"
+              style={{
+                background: 'var(--ink-3)',
+                color: 'var(--haze-3)',
+                borderRadius: 'var(--r-md)',
+              }}
+            >
+              <span className="t-small">Preparing QR...</span>
             </div>
           )}
         </div>
@@ -59,12 +96,7 @@ export function DeviceAttestDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onConfirm}
-            disabled={isChecking}
-          >
+          <Button type="button" variant="secondary" onClick={onConfirm} disabled={isChecking}>
             {isChecking ? 'Checking...' : 'I have completed attestation'}
           </Button>
         </div>
