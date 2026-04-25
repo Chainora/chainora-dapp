@@ -40,10 +40,10 @@ export const deriveGroupStatus = (params: {
   backendGroupStatus?: string | null;
 }): GroupStatus => {
   const fromBackend = toNormalizedBackendStatus(params.backendGroupStatus);
-  // `deadlinepassed` is backend-derived and not directly inferable from current period snapshot.
-  // For all other statuses, prefer chain-derived state to avoid stale DB status pinning UI in old phases.
-  if (fromBackend === 'deadlinepassed') {
-    return 'deadlinepassed';
+  // Backend is now the primary projection source for dashboard/group-detail reads.
+  // Prefer backend status whenever it is present and valid.
+  if (fromBackend) {
+    return fromBackend;
   }
 
   const chainDerivedStatus: GroupStatus = (() => {

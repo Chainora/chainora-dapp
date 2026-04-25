@@ -1,4 +1,5 @@
 import './polyfills/react-effect-event';
+import './polyfills/ky-prefix-url';
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -13,6 +14,7 @@ import {
 import InterwovenKitStyles from '@initia/interwovenkit-react/styles.js';
 
 import { wagmiConfig } from './configs/wagmi';
+import { WalletRelayPairingModal } from './components/wallet/WalletRelayPairingModal';
 import { AuthProvider } from './context/AuthContext';
 import { AppQueryProvider } from './query/provider';
 import { router } from './router';
@@ -40,6 +42,7 @@ createRoot(document.getElementById('root') as HTMLElement).render(
         >
           <AuthProvider>
             <RouterProvider router={router} />
+            <WalletRelayPairingModal />
           </AuthProvider>
         </InterwovenKitProvider>
       </AppQueryProvider>

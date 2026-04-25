@@ -58,7 +58,7 @@ Contract reads go directly to RPC with no caching. Use `publicClient` for reads,
 
 ### Data Flow
 
-1. **Auth**: QR-based login flow in `services/authQrFlow.ts`. Token auto-refreshes every 10 minutes; 401 responses trigger refresh via `useAuthFetch` hook.
+1. **Auth**: Relay-based login flow using `InterwovenKit` + custom wallet relay connector. dApp creates auth session (`/v1/auth/session`), signs nonce via relay (`personal_sign`), verifies via `/v1/auth/verify`, and stores auth state per-tab in `sessionStorage`.
 2. **Groups**: Fetched from backend (`VITE_CHAINORA_API_URL/groups`), cached in localStorage with TTL. React Query manages staleness.
 3. **Contract state**: Queried on demand via the protocol client in `src/hooks/useChainora.ts` and `useChainoraProtocol.ts`.
 

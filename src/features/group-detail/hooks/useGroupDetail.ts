@@ -879,6 +879,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   const poolActionWallet = usePoolActionWallet({
     token,
     poolAddress,
+    expectedAccountAddress: viewerAddress,
     onActionSuccess: handlePoolActionSuccess,
   });
 

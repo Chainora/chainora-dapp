@@ -1,6 +1,5 @@
 import { Navigate, useNavigate } from '@tanstack/react-router';
 import { type ChangeEvent, type FormEvent, useCallback, useMemo, useState } from 'react';
-import { useInterwovenKit } from '@initia/interwovenkit-react';
 import {
   decodeEventLog,
   getAddress,
@@ -8,7 +7,7 @@ import {
   parseUnits,
   type Address,
 } from 'viem';
-import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
+import { useAccount, usePublicClient } from 'wagmi';
 
 import { DeviceAttestDialog } from '../components/wallet/DeviceAttestDialog';
 import { chainoraApiBase } from '../configs/api';
@@ -50,6 +49,8 @@ import type {
 } from '../features/create-group/types';
 import { useAuthFetch } from '../hooks/useAuthFetch';
 import { useDeviceAttestationGate } from '../hooks/useDeviceAttestationGate';
+import { useRelayAbiWriteExecutor } from '../hooks/useRelayAbiWriteExecutor';
+import { syncGroupStateAfterTx, waitForGroupProjectionSync } from '../services/groupStateSync';
 import { uploadMediaImage } from '../services/mediaService';
 import { createGroupRecord } from '../services/groupsService';
 
@@ -62,15 +63,15 @@ const mergeGroupIntoList = (current: ApiGroup[], incoming: ApiGroup): ApiGroup[]
   return [incoming, ...filtered];
 };
 
-const primeDashboardCacheWithGroup = (group: ApiGroup, isPublic: boolean): void => {
+const primeDashboardCacheWithGroup = (group: ApiGroup, isPublic: boolean, viewerAddress: string): void => {
   if (typeof window === 'undefined') {
     return;
   }
 
   const modes: Array<'joined' | 'public'> = isPublic ? ['joined', 'public'] : ['joined'];
   for (const mode of modes) {
-    const existing = readDashboardGroupCache(mode, DEFAULT_DASHBOARD_QUERY_KEY) ?? [];
-    writeDashboardGroupCache(mode, DEFAULT_DASHBOARD_QUERY_KEY, mergeGroupIntoList(existing, group));
+    const existing = readDashboardGroupCache(mode, DEFAULT_DASHBOARD_QUERY_KEY, viewerAddress) ?? [];
+    writeDashboardGroupCache(mode, DEFAULT_DASHBOARD_QUERY_KEY, mergeGroupIntoList(existing, group), viewerAddress);
   }
 };
 
@@ -118,14 +119,73 @@ const mapCreateGroupWalletStatus = (state: CreateGroupWalletFlowState): string =
   }
 };
 
+const extractRevertDetail = (message: string): string => {
+  const trimmed = message.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  const failedExecuteMatch = trimmed.match(/failed to execute message;[^\n\r]*/i);
+  if (failedExecuteMatch) {
+    return failedExecuteMatch[0].trim();
+  }
+
+  const executionRevertedMatch = trimmed.match(/execution reverted(?::\s*([^\n\r]+))?/i);
+  if (executionRevertedMatch) {
+    const reason = (executionRevertedMatch[1] ?? '').trim();
+    return reason ? `execution reverted: ${reason}` : 'execution reverted';
+  }
+
+  if (trimmed.toLowerCase().includes('reverted')) {
+    return 'execution reverted';
+  }
+
+  return '';
+};
+
 const normalizeCreateGroupError = (raw: unknown): string => {
   const fallback = 'Could not create group. Please try again.';
   const message = raw instanceof Error ? raw.message.trim() : String(raw ?? '').trim();
+  const providerCode = typeof raw === 'object' && raw !== null && 'code' in raw
+    ? Number((raw as { code?: unknown }).code)
+    : Number.NaN;
+  if (providerCode === 4001) {
+    return 'Request canceled in Chainora Wallet. No transaction was sent.';
+  }
   if (!message) {
     return fallback;
   }
 
   const lower = message.toLowerCase();
+  if (lower.includes('user rejected') || lower.includes('request rejected in mobile wallet')) {
+    return 'Request canceled in Chainora Wallet. No transaction was sent.';
+  }
+  const revertDetail = extractRevertDetail(message);
+  if (revertDetail) {
+    return `Transaction reverted on-chain: ${revertDetail}`;
+  }
+
+  if (
+    lower.includes('mobile peer is not connected')
+    || lower.includes('relay websocket is not connected')
+    || lower.includes('wallet relay account is not connected')
+    || lower.includes('relay session disconnected')
+  ) {
+    return 'Wallet relay session disconnected. Please reconnect wallet and scan QR again.';
+  }
+
+  if (
+    lower.includes('session account mismatch')
+    || lower.includes('switch active account before approving this request')
+    || (lower.includes('account') && lower.includes('mismatch'))
+  ) {
+    return 'Wallet account mismatch for this session. Reconnect this tab and scan QR with the matching account.';
+  }
+
+  if (lower.includes('relay request timeout')) {
+    return 'Native wallet did not approve in time. Please retry and confirm on mobile.';
+  }
+
   if (
     lower.includes('nonce')
     || lower.includes('sequence')
@@ -175,9 +235,8 @@ export function CreateGroupPage() {
   const navigate = useNavigate();
   const { token, isAuthenticated, address, initAddress } = useAuth();
   const { authFetch } = useAuthFetch();
-  const { openConnect } = useInterwovenKit();
+  const executeAbiWrite = useRelayAbiWriteExecutor();
   const { address: connectedWalletAddressRaw } = useAccount();
-  const { data: walletClient } = useWalletClient();
   const publicClient = usePublicClient();
 
   const connectedWalletAddress = useMemo(() => {
@@ -225,7 +284,12 @@ export function CreateGroupPage() {
   const members = Number(form.targetMembers || '0');
   const totalPot = Number.isFinite(amountPerPeriod * members) ? amountPerPeriod * members : 0;
 
-  const reviewStatusMessage = useMemo(() => mapCreateGroupWalletStatus(reviewFlowState), [reviewFlowState]);
+  const reviewStatusMessage = useMemo(() => {
+    if (reviewFlowState === 'error' && reviewDialogError.trim()) {
+      return reviewDialogError.trim();
+    }
+    return mapCreateGroupWalletStatus(reviewFlowState);
+  }, [reviewDialogError, reviewFlowState]);
 
   const dismissToast = useCallback((id: number) => {
     setToasts(previous => previous.filter(item => item.id !== id));
@@ -338,16 +402,11 @@ export function CreateGroupPage() {
   }, [navigate, reviewInput]);
 
   const executeCreateGroup = useCallback(async (input: CreateGroupInput) => {
-    if (!publicClient || !walletClient || !connectedWalletAddress) {
-      setReviewFlowState('connecting');
-      openConnect();
-      throw new Error('Wallet is not connected. Please connect Chainora wallet first.');
+    if (!publicClient) {
+      throw new Error('RPC client is not ready. Please refresh and try again.');
     }
     if (!actionAddress) {
       throw new Error('Please log in again to continue.');
-    }
-    if (connectedWalletAddress.toLowerCase() !== actionAddress.toLowerCase()) {
-      throw new Error('Connected wallet does not match authenticated account.');
     }
     if (!token.trim()) {
       throw new Error('Session expired. Please log in again.');
@@ -367,31 +426,49 @@ export function CreateGroupPage() {
         input.contributionWindow,
       );
       const contributionAmountWei = parseUnits(input.amountPerPeriod, CURRENCY_DECIMALS);
-
-      setReviewFlowState('awaiting_card');
-      const txHash = await walletClient.writeContract({
-        account: connectedWalletAddress,
-        address: CHAINORA_PROTOCOL_ADDRESSES.factory,
+      const createPoolArgs = [
+        {
+          contributionAmount: contributionAmountWei,
+          minReputation: BigInt(input.minReputationScore),
+          targetMembers: input.targetMembers,
+          periodDuration: contractTimes.periodDurationSeconds,
+          contributionWindow: contractTimes.contributionWindowSeconds,
+          auctionWindow: contractTimes.auctionWindowSeconds,
+        },
+        input.groupVisibility === 'public',
+      ] as const;
+      const { txHash, receipt } = await executeAbiWrite({
+        actionKey: 'create_group',
+        expectedAccountAddress: actionAddress,
+        contractAddress: CHAINORA_PROTOCOL_ADDRESSES.factory,
         abi: FACTORY_ABI,
         functionName: 'createPool',
-        args: [
-          {
-            contributionAmount: contributionAmountWei,
-            minReputation: BigInt(input.minReputationScore),
-            targetMembers: input.targetMembers,
-            periodDuration: contractTimes.periodDurationSeconds,
-            contributionWindow: contractTimes.contributionWindowSeconds,
-            auctionWindow: contractTimes.auctionWindowSeconds,
-          },
-          input.groupVisibility === 'public',
-        ],
+        args: createPoolArgs,
+        onStageChange: stage => {
+          switch (stage) {
+            case 'connecting':
+              setReviewFlowState('connecting');
+              break;
+            case 'processing':
+              setReviewFlowState('awaiting_wallet_approval');
+              break;
+            case 'awaiting_native':
+              setReviewFlowState('awaiting_card');
+              break;
+            case 'broadcasting':
+              setReviewFlowState('broadcasting');
+              break;
+            case 'confirmed':
+              setReviewFlowState('confirmed');
+              break;
+            case 'error':
+              setReviewFlowState('error');
+              break;
+            default:
+              break;
+          }
+        },
       });
-
-      setReviewFlowState('broadcasting');
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
-      if (receipt.status !== 'success') {
-        throw new Error('Create-group transaction reverted.');
-      }
 
       const created = decodePoolCreatedFromReceipt(
         receipt.logs as readonly { address: Address; data: `0x${string}`; topics: readonly `0x${string}`[] }[],
@@ -414,13 +491,40 @@ export function CreateGroupPage() {
         txHash,
       });
 
-      primeDashboardCacheWithGroup(persistedGroup, input.groupVisibility === 'public');
+      primeDashboardCacheWithGroup(persistedGroup, input.groupVisibility === 'public', actionAddress);
       primeJoinedPoolCache(actionAddress, persistedGroup.poolId);
 
       setIsCreatePoolSuccess(true);
-      setPendingNavigationOnDone(true);
       setReviewFlowState('confirmed');
       pushToast('success', 'Group created successfully.');
+      closeReviewDialog();
+      navigateToDashboardAfterCreate();
+
+      void (async () => {
+        try {
+          const projectionSync = await waitForGroupProjectionSync({
+            accessToken: token.trim(),
+            poolId: created.poolId,
+            txHash,
+          });
+          const synced = await syncGroupStateAfterTx({
+            accessToken: token.trim(),
+            poolId: created.poolId,
+            targets: ['overview'],
+          });
+          const finalGroup = synced.overview ?? persistedGroup;
+          primeDashboardCacheWithGroup(finalGroup, input.groupVisibility === 'public', actionAddress);
+          primeJoinedPoolCache(actionAddress, finalGroup.poolId);
+          if (projectionSync.timedOut) {
+            console.warn('[create-group] backend projection sync delayed', {
+              poolId: created.poolId,
+              txHash,
+            });
+          }
+        } catch (syncError) {
+          console.warn('[create-group] post-submit sync failed', syncError);
+        }
+      })();
     } catch (error) {
       const message = normalizeCreateGroupError(error);
       setReviewFlowState('error');
@@ -432,12 +536,12 @@ export function CreateGroupPage() {
     }
   }, [
     actionAddress,
-    connectedWalletAddress,
-    openConnect,
+    closeReviewDialog,
+    executeAbiWrite,
+    navigateToDashboardAfterCreate,
     publicClient,
     pushToast,
     token,
-    walletClient,
   ]);
 
   const onConfirmReview = useCallback(async () => {

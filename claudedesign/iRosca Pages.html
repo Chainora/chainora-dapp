@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iRosca — 5 màn hình</title>
+<link rel="stylesheet" href="tokens.css" />
+<style>
+  /* Canvas overrides — the design-canvas sets body background to warm gray.
+     Our screens want dark, but the canvas wants its own surface; we keep
+     them separate. Each screen has data-screen-label. */
+  html, body { margin: 0; padding: 0; background: #0a0e17; color: #e8ecf3; }
+  * { box-sizing: border-box; }
+
+  /* Shared browser frame */
+  .bz {
+    background: var(--ink-2);
+    border-radius: 12px;
+    box-shadow: 0 24px 60px -20px rgba(0,0,0,0.7);
+    overflow: hidden;
+    border: 1px solid var(--ink-5);
+    height: 100%;
+    display: flex; flex-direction: column;
+  }
+  .bz-chrome {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--ink-5);
+    background: var(--ink-3);
+    flex-shrink: 0;
+  }
+  .bz-dots { display: flex; gap: 6px; }
+  .bz-dots i { width: 10px; height: 10px; border-radius: 50%; display:block; }
+  .bz-dots i:nth-child(1) { background: #ff5f57; }
+  .bz-dots i:nth-child(2) { background: #febc2e; }
+  .bz-dots i:nth-child(3) { background: #28c840; }
+  .bz-url {
+    flex: 1; text-align: center;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--haze-3);
+    background: var(--ink-1);
+    padding: 5px 10px; border-radius: 6px;
+    max-width: 460px;
+    margin: 0 auto;
+  }
+  .bz-body {
+    flex: 1;
+    min-height: 0;
+    background: var(--ink-0);
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Shared app-nav (chrome of the dApp itself, inside browser body) */
+  .app-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--ink-5);
+    background: var(--ink-1);
+    flex-shrink: 0;
+  }
+  .app-nav .brand { display: inline-flex; align-items: center; gap: 10px; }
+  .app-nav .brand .mk {
+    width: 28px; height: 28px; border-radius: 7px;
+    background: radial-gradient(circle at 30% 30%, #3da1ff, transparent 60%), linear-gradient(135deg, var(--signal-500), var(--signal-800));
+    position: relative;
+  }
+  .app-nav .brand .mk::after {
+    content: ""; position: absolute; inset: 7px;
+    border: 1.5px solid rgba(255,255,255,0.85);
+    border-top-color: transparent; border-right-color: transparent;
+    transform: rotate(-45deg);
+  }
+  .app-nav .brand .wm {
+    font-family: var(--font-display); font-weight: 800; font-size: 17px;
+    letter-spacing: -0.04em;
+  }
+  .app-nav .brand .wm em { color: var(--signal-300); font-style: normal; font-weight: 500; }
+  .app-nav .tabs { display: flex; gap: 24px; font-size: 13px; }
+  .app-nav .tabs a {
+    color: var(--haze-3); text-decoration: none;
+    padding: 6px 0; position: relative;
+    cursor: pointer;
+  }
+  .app-nav .tabs a.on { color: var(--haze-1); }
+  .app-nav .tabs a.on::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -15px;
+    height: 2px; background: var(--signal-400);
+    box-shadow: 0 0 8px var(--signal-400);
+  }
+  .app-nav .right { display: flex; align-items: center; gap: 10px; }
+  .app-nav .avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: linear-gradient(135deg, #22d3ee, #0a7cf2);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: white; font-size: 11px; font-weight: 700;
+  }
+
+  /* Surface helpers */
+  .scroll {
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .scroll::-webkit-scrollbar { display: none; }
+
+  /* Let DCEditable not trigger on clicks inside our mocks */
+  .bz .dc-editable { cursor: default; }
+</style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="screens/shared.jsx"></script>
+<script type="text/babel" src="screens/landing.jsx"></script>
+<script type="text/babel" src="screens/dashboard.jsx"></script>
+<script type="text/babel" src="screens/group-detail.jsx"></script>
+<script type="text/babel" src="screens/create-group.jsx"></script>
+<script type="text/babel" src="screens/profile.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+
+</body>
+</html>

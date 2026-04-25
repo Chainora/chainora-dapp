@@ -25,11 +25,13 @@ Required values for a real local run:
 - `VITE_CHAINORA_RPC_URL`
 - `VITE_CHAINORA_EXPLORER_URL`
 - `VITE_CHAINORA_CHAIN_ID`
-- `VITE_WALLETCONNECT_PROJECT_ID`
+- `VITE_CHAINORA_TX_GAS_BUFFER_BPS` (recommended, default is `12000` = +20%)
+- `VITE_CHAINORA_RELAY_CONNECT_TIMEOUT_MS`
 - `VITE_INTERWOVEN_NETWORK`
 - `VITE_INTERWOVEN_DEFAULT_CHAIN_ID`
 
 Username lookup is disabled by default in the example file because the sample Initia HTTP base used previously is not compatible with the current lookup code.
+For QR login from a real phone, `VITE_CHAINORA_API_URL` must point to a LAN-reachable backend host (for example `http://192.168.x.x:8080`) and must not be `localhost`/`127.0.0.1`.
 
 ### 2. Install dependencies
 
@@ -43,7 +45,7 @@ corepack yarn install
 corepack yarn dev
 ```
 
-The frontend defaults to `http://localhost:8080` if `VITE_CHAINORA_API_URL` is not set, but keeping the value explicit in `.env.local` is recommended.
+Set `VITE_CHAINORA_API_URL` explicitly in `.env.local` before running the app.
 
 ## Validation
 

@@ -1,11 +1,11 @@
 import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from '@tanstack/react-router';
-import { useInterwovenKit } from '@initia/interwovenkit-react';
 import { getAddress, isAddress } from 'viem';
 import { useAccount, useSignMessage } from 'wagmi';
 
 import { chainoraApiBase } from '../configs/api';
 import { useAuthFetch } from '../hooks/useAuthFetch';
+import { useConnectRelayWallet } from '../hooks/useConnectRelayWallet';
 import { useAuth } from '../context/AuthContext';
 import { fetchChainoraBalance, fetchChainoraStablecoinBalance } from '../services/chainoraBalance';
 import { uploadMediaImage } from '../services/mediaService';
@@ -77,8 +77,8 @@ const toFriendlyRelayerError = (raw: unknown, fallback: string): string => {
 export function ProfilePage() {
   const { isAuthenticated, setAvatarUrl } = useAuth();
   const { authFetch } = useAuthFetch();
-  const { openConnect } = useInterwovenKit();
-  const { address: walletAddressRaw, isConnected } = useAccount();
+  const connectRelayWallet = useConnectRelayWallet();
+  const { address: walletAddressRaw } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [registerUsername, setRegisterUsername] = useState('');
@@ -286,14 +286,23 @@ export function ProfilePage() {
       return;
     }
 
-    if (!isConnected || !connectedWalletAddress) {
-      openConnect();
-      setError('Connect wallet first, then retry username registration.');
+    let relayAddress = connectedWalletAddress;
+    try {
+      relayAddress = await connectRelayWallet({
+        mode: 'default',
+      });
+    } catch (connectError) {
+      setError(toFriendlyRelayerError(connectError, 'Could not connect wallet. Please try again.'));
+      return;
+    }
+
+    if (!relayAddress) {
+      setError('Wallet connected but address is unavailable. Please try again.');
       return;
     }
 
     const profileAddress = getAddress(profile.address.trim());
-    if (connectedWalletAddress.toLowerCase() !== profileAddress.toLowerCase()) {
+    if (relayAddress.toLowerCase() !== profileAddress.toLowerCase()) {
       setError('Connected wallet does not match profile wallet.');
       return;
     }
@@ -306,7 +315,7 @@ export function ProfilePage() {
       const payload = await createUsernameRelayerPayload(profileAddress, nextName);
       setNotice('Approve username signature in native app...');
       const signature = await signMessageAsync({
-        account: connectedWalletAddress,
+        account: relayAddress,
         message: payload.message,
       });
 

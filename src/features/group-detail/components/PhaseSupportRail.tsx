@@ -171,7 +171,7 @@ export function PhaseSupportRail({
                 && Boolean(viewerLower)
                 && proposal.candidate.toLowerCase() === viewerLower
                 && !isMember;
-              const canVoteNow = isMember && proposal.canVote;
+              const canVoteNow = isMember && proposal.canVote && !proposal.myVote;
               const voteStateLabel = proposal.myVote
                 ? `You voted ${proposal.myVote}`
                 : canAccept
