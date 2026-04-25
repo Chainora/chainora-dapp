@@ -115,7 +115,7 @@ function SlidersIcon() {
   );
 }
 
-function RefreshIcon() {
+function RefreshIcon({ spinning = false }: { spinning?: boolean }) {
   return (
     <svg
       width="13"
@@ -127,6 +127,7 @@ function RefreshIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      style={spinning ? { animation: 'chainora-spin 0.8s linear infinite' } : undefined}
     >
       <path d="M13 6A5 5 0 1 0 12 12.5M13 3v3h-3" />
     </svg>
@@ -379,6 +380,7 @@ export function DashboardGroupSection({
             ) : null}
           </div>
 
+          <style>{`@keyframes chainora-spin { to { transform: rotate(360deg); } }`}</style>
           <Button
             type="button"
             variant="ghost"
@@ -389,7 +391,7 @@ export function DashboardGroupSection({
             title="Refresh"
           >
             <span className="inline-flex items-center gap-2">
-              <RefreshIcon />
+              <RefreshIcon spinning={isRefreshing} />
               Refresh
             </span>
           </Button>

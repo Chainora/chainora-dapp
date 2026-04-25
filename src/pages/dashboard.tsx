@@ -17,7 +17,6 @@ import {
   type DashboardSortOrder,
 } from '../features/dashboard/DashboardFilterBar';
 import { DashboardGroupSection } from '../features/dashboard/DashboardGroupSection';
-import { RefreshToast } from '../features/dashboard/RefreshToast';
 import { useDashboardStats } from '../features/dashboard/useDashboardStats';
 import type { DashboardMode } from '../features/dashboard/types';
 import { DashboardGroupCard, DashboardStats } from '../features/dashboard/ui';
@@ -403,7 +402,6 @@ export function DashboardPage() {
 
   return (
     <section className="mx-auto w-full max-w-[1280px] space-y-7 px-6">
-      <RefreshToast visible={manualRefreshing} />
       <DashboardHero
         greetingName={greetingName}
         mode={mode}

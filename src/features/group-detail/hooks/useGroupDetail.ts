@@ -951,21 +951,13 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
 
   const totalPayoutLabel = useMemo(() => {
     try {
-      if (BigInt(payoutAmountRaw) > 0n) {
-        return formatToken(payoutAmountRaw);
-      }
-    } catch {
-      // Ignore parse errors and fall back to contribution-based estimate.
-    }
-
-    try {
       const contribution = BigInt(group?.contributionAmount ?? '0');
-      const memberCount = BigInt(Math.max(group?.activeMemberCount ?? 0, 1));
-      return formatToken((contribution * memberCount).toString());
+      const targetMembers = BigInt(Math.max(group?.targetMembers ?? 0, 1));
+      return formatToken((contribution * targetMembers).toString());
     } catch {
       return formatToken('0');
     }
-  }, [group?.activeMemberCount, group?.contributionAmount, payoutAmountRaw]);
+  }, [group?.contributionAmount, group?.targetMembers]);
 
   const claimableYieldLabel = useMemo(
     () => formatToken(phaseView?.userClaimState.claimableYield ?? '0'),

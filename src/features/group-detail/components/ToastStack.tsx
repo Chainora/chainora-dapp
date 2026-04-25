@@ -35,7 +35,7 @@ export function ToastStack({
   }
 
   return (
-    <div className="fixed right-4 top-4 z-[70] flex w-[min(92vw,360px)] flex-col gap-2">
+    <div className="fixed right-4 top-20 z-[200] flex w-[min(92vw,360px)] flex-col gap-2">
       {toasts.map(toast => {
         const tone = toneStyle(toast.tone);
         return (
