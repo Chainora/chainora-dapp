@@ -1,8 +1,9 @@
 import { createPublicClient, erc20Abi, formatEther, formatUnits, getAddress, http } from 'viem';
 
 import { CHAINORA_PROTOCOL_ADDRESSES, ZERO_ADDRESS } from '../contract/chainoraAddresses';
+import { CHAINORA_RPC_URL } from '../configs/rpc';
 
-const chainoraRpcUrl = import.meta.env.VITE_CHAINORA_RPC_URL?.trim() || 'http://157.66.100.120:8545/';
+const chainoraRpcUrl = CHAINORA_RPC_URL;
 
 const chainoraChainIdRaw = Number.parseInt(import.meta.env.VITE_CHAINORA_CHAIN_ID?.trim() || '', 10);
 const chainoraChainId = Number.isFinite(chainoraChainIdRaw) ? chainoraChainIdRaw : 1123337227327254;
@@ -28,7 +29,7 @@ const publicClient = createPublicClient({
       },
     },
   },
-  transport: http(chainoraRpcUrl, { timeout: 10000 }),
+  transport: http(chainoraRpcUrl, { timeout: 15000, retryCount: 3, retryDelay: 400 }),
 });
 
 const toFixedBalance = (wei: bigint, decimals: number): string => {

@@ -1,40 +1,29 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Navigate, useNavigate } from '@tanstack/react-router';
 
+import { BidLeaderboard } from '../features/group-detail/components/BidLeaderboard';
 import { DetailSkeleton } from '../features/group-detail/components/DetailSkeleton';
-import { DetailTopBar } from '../features/group-detail/components/DetailTopBar';
-import { GroupDetailsHeader } from '../features/group-detail/components/GroupDetailsHeader';
-import { GroupHistoryTable } from '../features/group-detail/components/GroupHistoryTable';
+import { GroupDetailBreadcrumb } from '../features/group-detail/components/GroupDetailBreadcrumb';
+import { GroupHeroBlock } from '../features/group-detail/components/GroupHeroBlock';
+import { MembersTable } from '../features/group-detail/components/MembersTable';
 import { PhasePrimaryPanel } from '../features/group-detail/components/PhasePrimaryPanel';
-import { PhaseSupportRail } from '../features/group-detail/components/PhaseSupportRail';
-import { PoolActionQrDialog } from '../features/group-detail/components/PoolActionQrDialog';
-import { PoolTimeline } from '../features/group-detail/components/PoolTimeline';
+import { PoolActionWalletDialog } from '../features/group-detail/components/PoolActionWalletDialog';
+import { ScheduleGrid } from '../features/group-detail/components/ScheduleGrid';
 import { ToastStack } from '../features/group-detail/components/ToastStack';
-import { compactUiConfig, resolveCompactUiPhase } from '../features/group-detail/compactConfig';
+import { resolveCompactUiPhase } from '../features/group-detail/compactConfig';
 import { useGroupDetail } from '../features/group-detail/hooks/useGroupDetail';
+import { formatToken } from '../features/group-detail/utils';
 
 type GroupDetailProps = {
   poolId: string;
 };
 
-const desktopMinWidth = 1024;
+const CHAIN_NAME =
+  (import.meta.env.VITE_CHAINORA_NETWORK_NAME as string | undefined)?.trim() || 'Chainora Rollup';
 
 export function GroupDetailPage({ poolId }: GroupDetailProps) {
   const navigate = useNavigate();
   const detail = useGroupDetail({ poolId });
-  const [isCompactViewport, setIsCompactViewport] = useState(true);
-
-  useEffect(() => {
-    const updateViewportMode = () => {
-      const isDesktop = window.innerWidth >= desktopMinWidth;
-      const hasEnoughHeight = window.innerHeight >= compactUiConfig.viewportHeightThreshold;
-      setIsCompactViewport(isDesktop && hasEnoughHeight);
-    };
-
-    updateViewportMode();
-    window.addEventListener('resize', updateViewportMode);
-    return () => window.removeEventListener('resize', updateViewportMode);
-  }, []);
 
   const statusMessage = useMemo(() => {
     if (detail.inputError) {
@@ -71,8 +60,16 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
 
   if (!detail.group) {
     return (
-      <section className="mx-auto max-w-5xl p-4">
-        <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+      <section className="mx-auto w-full max-w-[1280px] px-6 py-6">
+        <p
+          className="t-small px-4 py-3"
+          style={{
+            background: 'var(--risk-bg)',
+            color: 'var(--risk-300)',
+            border: '1px solid rgba(239,68,68,0.4)',
+            borderRadius: 'var(--r-md)',
+          }}
+        >
           {detail.error || 'Group not found'}
         </p>
       </section>
@@ -80,115 +77,184 @@ export function GroupDetailPage({ poolId }: GroupDetailProps) {
   }
 
   const uiPhase = resolveCompactUiPhase(detail.groupStatus, detail.activePhase);
-  const phaseStatus = detail.phaseMeta?.phaseStatus ?? 'ended';
-  const countdownSeconds = detail.phaseMeta?.countdownSeconds ?? 0;
-  const countdownLabel = detail.phaseMeta?.countdownLabel ?? 'N/A';
+
+  const heroDeadlineEpoch = (() => {
+    const meta = detail.periodMeta;
+    if (!meta) return null;
+    switch (uiPhase) {
+      case 'funding':
+        return meta.contributionDeadline || null;
+      case 'bidding':
+        return meta.auctionDeadline || null;
+      case 'payout':
+        return meta.periodEndAt || null;
+      default:
+        return null;
+    }
+  })();
+
+  const paidCount = detail.memberStates.filter(member => member.state === 'paid').length;
+  const totalMembers = Math.max(detail.memberStates.length, 1);
+  const paidThisPeriodLabel = `${paidCount} / ${totalMembers}`;
+  const paidIsComplete = paidCount > 0 && paidCount >= totalMembers;
+
+  const bestDiscountRaw = detail.periodMeta?.bestDiscount ?? '0';
+  let bestDiscountLabel = '—';
+  try {
+    if (BigInt(bestDiscountRaw) > 0n) {
+      bestDiscountLabel = formatToken(bestDiscountRaw);
+    }
+  } catch {
+    bestDiscountLabel = '—';
+  }
+
+  const bidders = detail.memberPhaseViews.filter(member => {
+    if (!member.bidAmountRaw) return false;
+    try {
+      return BigInt(member.bidAmountRaw) > 0n;
+    } catch {
+      return false;
+    }
+  });
+  const eligibleCount = detail.memberPhaseViews.filter(member => member.state !== 'archived').length;
+
+  const payoutEstimateLabel = (() => {
+    try {
+      const totalContributed = BigInt(detail.periodMeta?.totalContributed ?? '0');
+      const bestDiscount = BigInt(bestDiscountRaw);
+      const estimate = totalContributed > bestDiscount ? totalContributed - bestDiscount : 0n;
+      return formatToken(estimate.toString());
+    } catch {
+      return formatToken('0');
+    }
+  })();
+
+  const shouldShowLeaderboard = uiPhase === 'bidding' || bidders.length > 0;
+
+  const periodStartAt = detail.periodMeta?.startAt ?? 0;
+  const periodDuration = detail.group.periodDuration ?? 0;
 
   return (
     <>
-      <section
-        className={`relative mx-auto max-w-6xl -mt-4 ${isCompactViewport ? 'h-[calc(100svh-10.5rem)] overflow-y-auto' : 'space-y-4 pb-6'}`}
-      >
-        <div className="pointer-events-none absolute inset-x-0 -top-10 -z-10 h-72 bg-[radial-gradient(80%_100%_at_15%_0%,rgba(186,230,253,0.62)_0%,rgba(255,255,255,0)_70%),radial-gradient(60%_85%_at_100%_5%,rgba(254,243,199,0.58)_0%,rgba(255,255,255,0)_70%)]" />
+      <section className="mx-auto w-full max-w-[1280px] px-6 py-6">
+        <GroupDetailBreadcrumb
+          groupName={detail.group.name}
+          currentCycle={detail.currentCycle}
+          isRefreshing={detail.isRefreshing}
+          onBack={() => {
+            void navigate({ to: '/dashboard' });
+          }}
+          onRefresh={detail.onRefresh}
+        />
 
-        <div className={isCompactViewport ? 'grid h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-2.5' : 'flex flex-col gap-2.5'}>
-          <DetailTopBar
-            isRefreshing={detail.isRefreshing}
-            onBack={() => {
-              void navigate({ to: '/dashboard' });
-            }}
-            onRefresh={detail.onRefresh}
-          />
+        <GroupHeroBlock
+          group={detail.group}
+          groupStatus={detail.groupStatus}
+          currentCycle={detail.currentCycle}
+          uiPhase={uiPhase}
+          membersLabel={detail.membersLabel}
+          contributionLabel={detail.contributionLabel}
+          totalPayoutLabel={detail.totalPayoutLabel}
+          bestDiscountLabel={bestDiscountLabel}
+          deadlineEpochSeconds={heroDeadlineEpoch}
+          paidThisPeriodLabel={paidThisPeriodLabel}
+          paidIsComplete={paidIsComplete}
+          chainName={CHAIN_NAME}
+        />
 
-          <GroupDetailsHeader
-            group={detail.group}
-            groupStatus={detail.groupStatus}
-            activePeriod={detail.activePeriod}
-            activePhase={detail.activePhase}
-            membersLabel={detail.membersLabel}
-            contributionLabel={detail.contributionLabel}
-            totalPayoutLabel={detail.totalPayoutLabel}
-            periodMeta={detail.periodMeta}
-            phaseStatus={phaseStatus}
-            countdownSeconds={countdownSeconds}
-            countdownLabel={countdownLabel}
-          />
+        <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+          <div className="space-y-4 min-w-0">
+            <MembersTable
+              members={detail.memberPhaseViews}
+              uiPhase={uiPhase}
+              proposals={detail.inviteProposals}
+              isMember={detail.isViewerMember}
+              isConnected={detail.isConnected}
+              isActing={detail.poolAction.isActing}
+              viewerAddress={detail.viewerAddress}
+              onVoteProposal={detail.onVoteProposal}
+            />
 
-          <div className={isCompactViewport ? 'grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] gap-2.5' : 'grid gap-2.5'}>
-            <PoolTimeline activePhase={uiPhase} groupStatus={detail.groupStatus} activePeriod={detail.activePeriod} />
+            {shouldShowLeaderboard ? (
+              <BidLeaderboard
+                members={detail.memberPhaseViews}
+                activePeriod={detail.activePeriod}
+                bidderCount={bidders.length}
+                eligibleCount={eligibleCount}
+                payoutEstimateLabel={payoutEstimateLabel}
+                viewerAddress={detail.viewerAddress}
+              />
+            ) : null}
 
-            <div className={`grid gap-2.5 ${isCompactViewport ? 'min-h-0 h-full lg:grid-cols-2' : 'lg:grid-cols-2'}`}>
-              <div className={isCompactViewport ? 'min-h-0 h-full' : ''}>
-                <PhasePrimaryPanel
-                  uiPhase={uiPhase}
-                  groupStatus={detail.groupStatus}
-                  periodMeta={detail.periodMeta}
-                  memberStates={detail.memberStates}
-                  permissions={detail.permissions}
-                  isViewerMember={detail.isViewerMember}
-                  isConnected={detail.isConnected}
-                  isActing={detail.poolAction.isActing}
-                  canProposeInvite={detail.canProposeInvite}
-                  canLeaveDuringForming={detail.canLeaveDuringForming}
-                  candidateAddress={detail.candidateAddress}
-                  canConfirmJoin={detail.canConfirmJoin}
-                  confirmJoinLabel={detail.confirmJoinLabel}
-                  canRequestJoin={detail.canRequestJoin}
-                  requestJoinDisabledReason={detail.requestJoinDisabledReason}
-                  contributionLabel={detail.contributionLabel}
-                  bidDiscountInput={detail.bidDiscountInput}
-                  onBidDiscountChange={detail.setBidDiscountInput}
-                  onCandidateAddressChange={detail.setCandidateAddress}
-                  onProposeInvite={detail.onProposeInvite}
-                  onLeaveDuringForming={detail.onLeaveDuringForming}
-                  onRequestJoin={detail.onRequestJoin}
-                  onConfirmJoin={detail.onConfirmJoin}
-                  onContribute={detail.onContribute}
-                  onSubmitBid={detail.onSubmitBid}
-                  onClaim={detail.onClaimPayout}
-                  onFinalize={detail.onFinalizePeriod}
-                  onVoteContinue={detail.onVoteContinue}
-                  onVoteEnd={detail.onVoteEnd}
-                />
-              </div>
-
-              <div className={isCompactViewport ? 'min-h-0 h-full' : ''}>
-                <PhaseSupportRail
-                  uiPhase={uiPhase}
-                  members={detail.memberPhaseViews}
-                  proposals={detail.inviteProposals}
-                  isMember={detail.isViewerMember}
-                  isConnected={detail.isConnected}
-                  isActing={detail.poolAction.isActing}
-                  viewerAddress={detail.viewerAddress}
-                  onVoteProposal={detail.onVoteProposal}
-                />
-              </div>
-            </div>
-
+            <ScheduleGrid
+              totalPeriods={detail.totalPeriods}
+              activePeriod={detail.activePeriod}
+              currentCycle={detail.currentCycle}
+              historyRows={detail.historyRows}
+              periodStartAt={periodStartAt}
+              periodDuration={periodDuration}
+            />
           </div>
 
-          {statusMessage ? (
-            <p
-              className={`rounded-xl px-3 py-2 text-xs font-semibold ${
-                statusMessage.tone === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-sky-50 text-sky-700'
-              }`}
-            >
-              {statusMessage.value}
-            </p>
-          ) : (
-            <div className="h-0" />
-          )}
+          <div className="min-w-0">
+            <div style={{ position: 'sticky', top: 24 }}>
+              <PhasePrimaryPanel
+                uiPhase={uiPhase}
+                groupStatus={detail.groupStatus}
+                periodMeta={detail.periodMeta}
+                memberStates={detail.memberStates}
+                permissions={detail.permissions}
+                isViewerMember={detail.isViewerMember}
+                isConnected={detail.isConnected}
+                isActing={detail.poolAction.isActing}
+                canProposeInvite={detail.canProposeInvite}
+                canLeaveDuringForming={detail.canLeaveDuringForming}
+                candidateAddress={detail.candidateAddress}
+                canConfirmJoin={detail.canConfirmJoin}
+                confirmJoinLabel={detail.confirmJoinLabel}
+                canRequestJoin={detail.canRequestJoin}
+                requestJoinDisabledReason={detail.requestJoinDisabledReason}
+                contributionLabel={detail.contributionLabel}
+                bidDiscountInput={detail.bidDiscountInput}
+                activePeriod={detail.activePeriod}
+                onBidDiscountChange={detail.setBidDiscountInput}
+                onCandidateAddressChange={detail.setCandidateAddress}
+                onProposeInvite={detail.onProposeInvite}
+                onLeaveDuringForming={detail.onLeaveDuringForming}
+                onRequestJoin={detail.onRequestJoin}
+                onConfirmJoin={detail.onConfirmJoin}
+                onContribute={detail.onContribute}
+                onSubmitBid={detail.onSubmitBid}
+                onClaim={detail.onClaimPayout}
+                onFinalize={detail.onFinalizePeriod}
+                onVoteContinue={detail.onVoteContinue}
+                onVoteEnd={detail.onVoteEnd}
+              />
+            </div>
+          </div>
         </div>
+
+        {statusMessage ? (
+          <p
+            className="t-tiny font-semibold mt-4 px-3 py-2"
+            style={{
+              background:
+                statusMessage.tone === 'error' ? 'var(--risk-bg)' : 'rgba(40,151,255,0.12)',
+              color:
+                statusMessage.tone === 'error' ? 'var(--risk-300)' : 'var(--signal-300)',
+              border:
+                statusMessage.tone === 'error'
+                  ? '1px solid rgba(239,68,68,0.4)'
+                  : '1px solid rgba(40,151,255,0.4)',
+              borderRadius: 'var(--r-md)',
+            }}
+          >
+            {statusMessage.value}
+          </p>
+        ) : null}
       </section>
 
-      <section className="mx-auto mt-2 max-w-6xl pb-6">
-        <div className="relative z-10">
-          <GroupHistoryTable rows={detail.historyRows} />
-        </div>
-      </section>
-
-      <PoolActionQrDialog
+      <PoolActionWalletDialog
         isOpen={detail.poolAction.isOpen}
         actionLabel={detail.poolAction.pendingActionLabel}
         isPreparing={detail.poolAction.isPreparing}

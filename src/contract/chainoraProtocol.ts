@@ -1,7 +1,9 @@
-import type { Address, PublicClient, WalletClient } from 'viem';
+import { getAddress, isAddress, type Address, type PublicClient, type WalletClient } from 'viem';
 
 import { CHAINORA_PROTOCOL_ADDRESSES, ZERO_ADDRESS } from './chainoraAddresses';
 import { ERC20_ABI, FACTORY_ABI, POOL_ABI, REGISTRY_ABI } from './chainoraAbis';
+import { estimateBufferedContractGas } from '../services/txGas';
+import { writeContractWithFallback } from '../services/walletWriteContract';
 
 export type PoolConfig = {
   contributionAmount: bigint;
@@ -26,13 +28,21 @@ export type PoolDiscoveryView = {
   minReputation: bigint;
 };
 
+type ProtocolClientOptions = {
+  onTxSubmitted?: (txHash: `0x${string}`) => Promise<void> | void;
+};
+
 const ensureAddress = (address: Address, label: string) => {
   if (address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
     throw new Error(`${label} is not configured`);
   }
 };
 
-export const createChainoraProtocolClient = (publicClient: PublicClient, walletClient?: WalletClient) => {
+export const createChainoraProtocolClient = (
+  publicClient: PublicClient,
+  walletClient?: WalletClient,
+  options?: ProtocolClientOptions,
+) => {
   const getWalletClient = (): WalletClient => {
     if (!walletClient) {
       throw new Error('Wallet client not connected');
@@ -41,18 +51,52 @@ export const createChainoraProtocolClient = (publicClient: PublicClient, walletC
     return walletClient;
   };
 
-  const writeWithWallet = (params: {
+  const resolveWalletAccount = (client: WalletClient): Address => {
+    const raw = client.account as unknown;
+    if (typeof raw === 'string' && isAddress(raw)) {
+      return getAddress(raw);
+    }
+
+    if (raw && typeof raw === 'object' && 'address' in raw) {
+      const address = (raw as { address?: unknown }).address;
+      if (typeof address === 'string' && isAddress(address)) {
+        return getAddress(address);
+      }
+    }
+
+    throw new Error('Wallet account is unavailable.');
+  };
+
+  const writeWithWallet = async (params: {
     address: Address;
     abi: readonly unknown[];
     functionName: string;
     args?: readonly unknown[];
+    value?: bigint;
   }) => {
     const activeWalletClient = getWalletClient();
+    const account = resolveWalletAccount(activeWalletClient);
+    const gas = await estimateBufferedContractGas(publicClient, {
+      account,
+      address: params.address,
+      abi: params.abi,
+      functionName: params.functionName,
+      args: params.args,
+      value: params.value,
+    });
 
-    return activeWalletClient.writeContract({
+    const txHash = await writeContractWithFallback({
+      account,
       ...params,
+      gas,
       chain: activeWalletClient.chain ?? null,
-    } as never);
+    }, activeWalletClient);
+
+    if (options?.onTxSubmitted) {
+      await options.onTxSubmitted(txHash as `0x${string}`);
+    }
+
+    return txHash;
   };
 
   const getRegistryAddress = () => {

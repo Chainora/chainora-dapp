@@ -1,6 +1,6 @@
 import { chainoraApiBase } from '../configs/api';
 
-export type GroupScope = 'all' | 'mine' | 'recruiting';
+export type GroupScope = 'all' | 'mine' | 'recruiting' | 'joined';
 export type GroupVisibility = 'all' | 'public' | 'private';
 
 export type ApiGroup = {
@@ -133,6 +133,47 @@ export type ApiGroupViewUserClaimState = {
   claimableArchiveRefund: string;
 };
 
+export type ApiGroupViewMembershipProposal = {
+  voteMode: 'invite' | 'join-request';
+  proposalId: string;
+  candidate: string;
+  yesVotes: number;
+  noVotes: number;
+  open: boolean;
+  myVote?: 'yes' | 'no' | '';
+  quorumMemberCount: number;
+  requiredYesVotes: number;
+  approvalRatio: number;
+  snapshotEligible: boolean;
+  canVote: boolean;
+};
+
+export type ApiGroupViewMemberBid = {
+  cycle: number;
+  period: number;
+  bidder: string;
+  discount: string;
+  blockNumber: string;
+  txHash: string;
+};
+
+export type ApiGroupViewExtensionVote = {
+  cycle: number;
+  period: number;
+  voter: string;
+  support: boolean;
+  blockNumber: string;
+  txHash: string;
+};
+
+export type ApiGroupViewProjectionMeta = {
+  lastIndexedBlock: string;
+  lastIndexedAt: string;
+  lastIndexedTxHash: string;
+  projectionVersion: number;
+  stale: boolean;
+};
+
 export type ApiGroupDetailView = {
   group: ApiGroup;
   selection: ApiGroupViewSelection;
@@ -143,6 +184,22 @@ export type ApiGroupDetailView = {
   memberStates: ApiGroupViewMemberState[];
   permissions: ApiGroupViewPermissions;
   userClaimState: ApiGroupViewUserClaimState;
+  membershipProposals: ApiGroupViewMembershipProposal[];
+  memberBids: ApiGroupViewMemberBid[];
+  extensionVotes: ApiGroupViewExtensionVote[];
+  projection: ApiGroupViewProjectionMeta;
+};
+
+export type ApiGroupSyncStatus = {
+  poolId: string;
+  txHash: string;
+  observed: boolean;
+  applied: boolean;
+  lastIndexedBlock: string;
+  lastIndexedAt: string;
+  lastIndexedTxHash: string;
+  projectionVersion: number;
+  stale: boolean;
 };
 
 type Envelope<T> = T | { success?: boolean; data?: T };
@@ -332,6 +389,16 @@ export const fetchGroupDetailView = async (
   return {
     ...normalized,
     group: normalizeGroupRecord(normalized.group),
+    membershipProposals: Array.isArray(normalized.membershipProposals) ? normalized.membershipProposals : [],
+    memberBids: Array.isArray(normalized.memberBids) ? normalized.memberBids : [],
+    extensionVotes: Array.isArray(normalized.extensionVotes) ? normalized.extensionVotes : [],
+    projection: normalized.projection ?? {
+      lastIndexedBlock: '0',
+      lastIndexedAt: '',
+      lastIndexedTxHash: '',
+      projectionVersion: 0,
+      stale: true,
+    },
   };
 };
 
@@ -353,4 +420,27 @@ export const createGroupRecord = async (
 
   const raw = (await response.json()) as Envelope<ApiGroup>;
   return normalizeGroupRecord(normalizeEnvelope(raw));
+};
+
+export const fetchGroupSyncStatus = async (
+  accessToken: string,
+  poolId: string,
+  txHash?: string,
+): Promise<ApiGroupSyncStatus> => {
+  const query = new URLSearchParams();
+  if (txHash && txHash.trim() !== '') {
+    query.set('txHash', txHash.trim());
+  }
+
+  const response = await fetch(
+    `${chainoraApiBase}/v1/groups/${encodeURIComponent(poolId)}/sync-status${query.size > 0 ? `?${query.toString()}` : ''}`,
+    withAccessToken(accessToken, { method: 'GET' }),
+  );
+
+  if (!response.ok) {
+    throw new Error(`Load group sync status failed: ${response.status}`);
+  }
+
+  const raw = (await response.json()) as Envelope<ApiGroupSyncStatus>;
+  return normalizeEnvelope(raw);
 };

@@ -5,8 +5,13 @@ import {
 } from './constants';
 import type { DashboardMode } from './types';
 
-export const buildDashboardGroupCacheKey = (mode: DashboardMode, query: string): string =>
-  `${DASHBOARD_GROUP_CACHE_KEY_PREFIX}:${mode}:${query.trim().toLowerCase()}`;
+const normalizeViewerKey = (viewerKey?: string): string =>
+  String(viewerKey ?? '').trim().toLowerCase();
+
+export const buildDashboardGroupCacheKey = (mode: DashboardMode, query: string, viewerKey?: string): string => {
+  const normalizedViewer = normalizeViewerKey(viewerKey);
+  return `${DASHBOARD_GROUP_CACHE_KEY_PREFIX}:${mode}:${normalizedViewer}:${query.trim().toLowerCase()}`;
+};
 
 export const buildJoinedPoolCacheKey = (viewerAddress: string): string =>
   `${DASHBOARD_JOINED_POOL_CACHE_KEY_PREFIX}:${viewerAddress.trim().toLowerCase()}`;
@@ -19,13 +24,14 @@ export type DashboardGroupCacheEntry = {
 export const readDashboardGroupCacheEntry = (
   mode: DashboardMode,
   query: string,
+  viewerKey?: string,
 ): DashboardGroupCacheEntry | null => {
   if (typeof window === 'undefined') {
     return null;
   }
 
   try {
-    const raw = window.localStorage.getItem(buildDashboardGroupCacheKey(mode, query));
+    const raw = window.localStorage.getItem(buildDashboardGroupCacheKey(mode, query, viewerKey));
     if (!raw) {
       return null;
     }
@@ -52,19 +58,19 @@ export const readDashboardGroupCacheEntry = (
   }
 };
 
-export const readDashboardGroupCache = (mode: DashboardMode, query: string): ApiGroup[] | null => {
-  const entry = readDashboardGroupCacheEntry(mode, query);
+export const readDashboardGroupCache = (mode: DashboardMode, query: string, viewerKey?: string): ApiGroup[] | null => {
+  const entry = readDashboardGroupCacheEntry(mode, query, viewerKey);
   return entry?.groups ?? null;
 };
 
-export const writeDashboardGroupCache = (mode: DashboardMode, query: string, groups: ApiGroup[]): void => {
+export const writeDashboardGroupCache = (mode: DashboardMode, query: string, groups: ApiGroup[], viewerKey?: string): void => {
   if (typeof window === 'undefined') {
     return;
   }
 
   try {
     window.localStorage.setItem(
-      buildDashboardGroupCacheKey(mode, query),
+      buildDashboardGroupCacheKey(mode, query, viewerKey),
       JSON.stringify({
         cachedAt: new Date().toISOString(),
         groups,

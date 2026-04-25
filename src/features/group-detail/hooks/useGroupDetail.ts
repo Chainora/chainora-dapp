@@ -33,7 +33,7 @@ import {
 import { useGroupOverviewQuery } from './useGroupOverviewQuery';
 import { useGroupPhaseViewQuery } from './useGroupPhaseViewQuery';
 import { usePhasePermissions } from './usePhasePermissions';
-import { type PoolActionCompletion, type PoolActionIntent, usePoolActionQr } from './usePoolActionQr';
+import { type PoolActionCompletion, type PoolActionIntent, usePoolActionWallet } from './usePoolActionWallet';
 import { useGroupMembershipProposals } from './useGroupMembershipProposals';
 import type { MemberPhaseView } from '../components/MemberStatePanel';
 import type { UiToast } from '../types';
@@ -876,9 +876,10 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     refreshGroupDetailNow,
   ]);
 
-  const poolActionQr = usePoolActionQr({
+  const poolActionWallet = usePoolActionWallet({
     token,
     poolAddress,
+    expectedAccountAddress: viewerAddress,
     onActionSuccess: handlePoolActionSuccess,
   });
 
@@ -909,27 +910,27 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
   }, []);
 
   useEffect(() => {
-    const message = poolActionQr.actionMessage.trim();
+    const message = poolActionWallet.actionMessage.trim();
     if (!message || message === lastActionMessageRef.current) {
       return;
     }
     lastActionMessageRef.current = message;
     pushToast('success', message);
-  }, [poolActionQr.actionMessage, pushToast]);
+  }, [poolActionWallet.actionMessage, pushToast]);
 
   useEffect(() => {
-    const message = poolActionQr.actionError.trim();
+    const message = poolActionWallet.actionError.trim();
     if (!message || message === lastActionErrorRef.current) {
       return;
     }
     lastActionErrorRef.current = message;
     pushToast('error', message);
-  }, [poolActionQr.actionError, pushToast]);
+  }, [poolActionWallet.actionError, pushToast]);
 
   const triggerAction = useCallback((intent: PoolActionIntent) => {
     setInputError('');
-    poolActionQr.startAction(intent);
-  }, [poolActionQr]);
+    poolActionWallet.startAction(intent);
+  }, [poolActionWallet]);
 
   const [bidDiscountInput, setBidDiscountInputState] = useState('');
 
@@ -950,21 +951,13 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
 
   const totalPayoutLabel = useMemo(() => {
     try {
-      if (BigInt(payoutAmountRaw) > 0n) {
-        return formatToken(payoutAmountRaw);
-      }
-    } catch {
-      // Ignore parse errors and fall back to contribution-based estimate.
-    }
-
-    try {
       const contribution = BigInt(group?.contributionAmount ?? '0');
-      const memberCount = BigInt(Math.max(group?.activeMemberCount ?? 0, 1));
-      return formatToken((contribution * memberCount).toString());
+      const targetMembers = BigInt(Math.max(group?.targetMembers ?? 0, 1));
+      return formatToken((contribution * targetMembers).toString());
     } catch {
       return formatToken('0');
     }
-  }, [group?.activeMemberCount, group?.contributionAmount, payoutAmountRaw]);
+  }, [group?.contributionAmount, group?.targetMembers]);
 
   const claimableYieldLabel = useMemo(
     () => formatToken(phaseView?.userClaimState.claimableYield ?? '0'),
@@ -1325,7 +1318,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     && (group?.activeMemberCount ?? 0) >= Math.max(group?.targetMembers ?? 0, 1);
 
   useEffect(() => {
-    if (!hasReachedFormingTarget || poolActionQr.isActing) {
+    if (!hasReachedFormingTarget || poolActionWallet.isActing) {
       return undefined;
     }
     if (typeof window === 'undefined') {
@@ -1344,10 +1337,10 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     return () => {
       window.clearInterval(timer);
     };
-  }, [hasReachedFormingTarget, poolActionQr.isActing, refreshGroupDetailNow]);
+  }, [hasReachedFormingTarget, poolActionWallet.isActing, refreshGroupDetailNow]);
 
   useEffect(() => {
-    if (!isAuthenticated || !token || poolActionQr.isActing) {
+    if (!isAuthenticated || !token || poolActionWallet.isActing) {
       return;
     }
     if (!phaseView || typeof window === 'undefined') {
@@ -1401,13 +1394,13 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     groupStatus,
     isAuthenticated,
     phaseView,
-    poolActionQr.isActing,
+    poolActionWallet.isActing,
     syncWithChain,
     token,
   ]);
 
   useEffect(() => {
-    if (!phaseView || poolActionQr.isActing || syncWithChain) {
+    if (!phaseView || poolActionWallet.isActing || syncWithChain) {
       return;
     }
 
@@ -1438,7 +1431,7 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
 
     phaseMismatchSyncKeyRef.current = mismatchKey;
     setSyncWithChain(true);
-  }, [groupStatus, phaseView, poolActionQr.isActing, syncWithChain]);
+  }, [groupStatus, phaseView, poolActionWallet.isActing, syncWithChain]);
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
@@ -1522,6 +1515,6 @@ export function useGroupDetail({ poolId }: GroupDetailProps) {
     onLeaveDuringForming,
     onVoteProposal,
     onAcceptMembershipProposal,
-    poolAction: poolActionQr,
+    poolAction: poolActionWallet,
   };
 }

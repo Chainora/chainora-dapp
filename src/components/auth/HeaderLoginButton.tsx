@@ -1,52 +1,53 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import { useInterwovenKit } from '@initia/interwovenkit-react';
+import { useDisconnect, useSignMessage } from 'wagmi';
 
 import { chainoraApiBase } from '../../configs/api';
 import { UserDetail } from '../UserDetail';
 import { useAuth } from '../../context/AuthContext';
-import {
-  AuthSessionResponse,
-  buildAuthQrPayload,
-  createAuthSession,
-  openAuthLoginSocket,
-} from '../../services/authQrFlow';
-import { buildQrImageUrl } from '../../services/qrFlow';
+import { useConnectRelayWallet } from '../../hooks/useConnectRelayWallet';
+import { createAuthSession, verifyAuthSession } from '../../services/authService';
 import { Button } from '../ui/Button';
 
 const normalizeLoginError = (raw: unknown): string => {
-  const fallback = 'Could not start login. Please refresh QR and try again.';
-  const message = raw instanceof Error ? raw.message.trim() : '';
-  if (!message) {
-    return fallback;
+  const relayCode = typeof raw === 'object' && raw !== null && 'relayCode' in raw
+    ? String((raw as { relayCode?: unknown }).relayCode ?? '').trim()
+    : '';
+  if (relayCode === 'LOGIN_SCAN_REQUIRED') {
+    return 'Mobile wallet did not complete one-tap login. Please scan QR and tap card again.';
   }
 
-  const lower = message.toLowerCase();
-  if (
-    lower.includes('session')
-    || lower.includes('payload')
-    || lower.includes('websocket')
-    || lower.includes('status')
-    || lower.includes('nonce')
-    || lower.includes('refresh token')
-  ) {
-    return fallback;
+  const providerCode = typeof raw === 'object' && raw !== null && 'code' in raw
+    ? Number((raw as { code?: unknown }).code)
+    : NaN;
+  if (providerCode === 4001) {
+    return 'Login was cancelled on mobile wallet.';
   }
 
-  return message;
+  if (raw instanceof Error) {
+    const message = raw.message.trim();
+    if (/LOGIN_SCAN_REQUIRED/i.test(message)) {
+      return 'Mobile wallet did not complete one-tap login. Please scan QR and tap card again.';
+    }
+    if (message) {
+      return message;
+    }
+  }
+
+  return 'Could not complete login. Please try again.';
 };
 
 export function HeaderLoginButton() {
+  const { disconnect: interwovenDisconnect } = useInterwovenKit();
+  const { disconnectAsync } = useDisconnect();
+  const { signMessageAsync } = useSignMessage();
+  const connectRelayWallet = useConnectRelayWallet();
   const { address, username, avatarUrl, isAuthenticated, logout, setAuthenticated, syncProfile } = useAuth();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [session, setSession] = useState<AuthSessionResponse | null>(null);
-  const [wsStatus, setWsStatus] = useState('idle');
-  const wsRef = useRef<WebSocket | null>(null);
   const avatarMenuRef = useRef<HTMLDivElement | null>(null);
-  const isLoginFlowInProgress = wsStatus === 'awaiting_card_scan'
-    || wsStatus.startsWith('login_device_');
 
   const avatarLabel = useMemo(() => {
     const trimmedUsername = username?.trim() ?? '';
@@ -64,153 +65,77 @@ export function HeaderLoginButton() {
 
   const resolvedAvatarUrl = useMemo(() => avatarUrl.trim(), [avatarUrl]);
 
-  const qrPayload = useMemo(() => {
-    if (!session) {
-      return '';
+  const handleLogout = useCallback(async () => {
+    try {
+      interwovenDisconnect();
+    } catch (disconnectError) {
+      console.warn('[auth] interwoven disconnect on logout failed', disconnectError);
     }
-    return buildAuthQrPayload(chainoraApiBase, session);
-  }, [session]);
-
-  const qrImageUrl = useMemo(() => buildQrImageUrl(qrPayload, 280), [qrPayload]);
-
-  const statusMessage = useMemo(() => {
-    if (wsStatus === 'awaiting_card_scan') {
-      return 'QR scanned. Tap your card to continue.';
-    }
-
-    if (wsStatus === 'login_device_verify_preparing') {
-      return 'Login confirmed. Setting up your card...';
-    }
-    if (wsStatus === 'login_device_verify_challenge') {
-      return 'Checking your card...';
-    }
-    if (wsStatus === 'login_device_verify_backend') {
-      return 'Finalizing sign-in...';
-    }
-    if (wsStatus === 'login_device_attestation_request') {
-      return 'Preparing sign-in...';
-    }
-    if (wsStatus === 'login_device_verification_submit') {
-      return 'Confirming sign-in...';
-    }
-    if (wsStatus === 'login_device_verification_receipt') {
-      return 'Almost done...';
-    }
-    if (wsStatus === 'login_device_verify_success') {
-      return 'Sign-in complete.';
-    }
-    if (wsStatus === 'login_device_verify_failed') {
-      return 'Sign-in complete. Some setup steps can be retried later.';
-    }
-
-    if (wsStatus === 'verified') {
-      return 'Login successful.';
-    }
-
-    if (wsStatus === 'connecting') {
-      return 'Connecting...';
-    }
-    if (wsStatus === 'connected' || wsStatus === 'qr_ready') {
-      return 'QR ready. Scan with Chainora app.';
-    }
-    if (wsStatus === 'message_error') {
-      return 'Connection interrupted. Please refresh QR.';
-    }
-    if (wsStatus === 'error') {
-      return 'Connection lost. Please refresh QR.';
-    }
-    if (wsStatus === 'closed') {
-      return 'Window closed.';
-    }
-
-    return null;
-  }, [wsStatus]);
-
-  const closeDialog = () => {
-    setIsDialogOpen(false);
-    setLoading(false);
-    setSession(null);
-    setWsStatus('idle');
-    setError('');
-    wsRef.current?.close();
-    wsRef.current = null;
-  };
-
-  const startQrLogin = async () => {
-    if (isLoginFlowInProgress) {
-      return;
-    }
-
-    setIsDialogOpen(true);
-    setLoading(true);
-    setError('');
-    setSession(null);
-    setWsStatus('idle');
-
-    wsRef.current?.close();
-    wsRef.current = null;
 
     try {
-      const createdSession = await createAuthSession(chainoraApiBase);
-      setSession(createdSession);
+      await disconnectAsync();
+    } catch (disconnectError) {
+      console.warn('[auth] wallet disconnect on logout failed', disconnectError);
+    }
 
-      const ws = openAuthLoginSocket(
-        chainoraApiBase,
-        createdSession.sessionId,
-        payload => {
-          if (payload.status) {
-            setWsStatus(payload.status);
-          }
+    logout();
+  }, [disconnectAsync, interwovenDisconnect, logout]);
 
-          if (payload.token && payload.refreshToken) {
-            const nextAddress = payload.address ?? '';
-            const nextUsername = payload.username ?? '';
+  const runLogin = useCallback(async (walletAddress: string) => {
+    setLoading(true);
+    console.info('[auth][dapp] login.start', { walletAddress });
+    try {
+      const session = await createAuthSession(chainoraApiBase);
+      const message = `Sign this to login to Chainora: ${session.nonce}`;
 
-            setAuthenticated({
-              token: payload.token,
-              refreshToken: payload.refreshToken,
-              address: nextAddress,
-              username: nextUsername,
-            });
+      const signature = await signMessageAsync({
+        account: walletAddress as `0x${string}`,
+        message,
+      });
 
-            void syncProfile(true).catch(() => {
-              // Profile sync is best-effort and must not block login.
-            });
+      const verified = await verifyAuthSession(chainoraApiBase, {
+        sessionId: session.sessionId,
+        address: walletAddress,
+        signature,
+      });
 
-            setWsStatus('verified');
-            closeDialog();
-            return;
-          }
+      setAuthenticated({
+        token: verified.token,
+        refreshToken: verified.refreshToken,
+        address: verified.address || walletAddress,
+        username: verified.username ?? '',
+      });
+      console.info('[auth][dapp] login.success', {
+        walletAddress,
+        verifiedAddress: verified.address || walletAddress,
+      });
 
-          if (payload.token && !payload.refreshToken) {
-            setError('Could not verify login. Please refresh QR and try again.');
-          }
-        },
-        state => {
-          setWsStatus(current => (state === 'closed' && current === 'verified' ? current : state));
-        },
-      );
-
-      wsRef.current = ws;
-    } catch (err) {
-      setSession(null);
-      setError(normalizeLoginError(err));
+      void syncProfile(true).catch(() => {
+        // Best-effort profile sync after successful login.
+      });
+    } catch (loginError) {
+      console.warn('[auth][dapp] login.failed', {
+        walletAddress,
+        message: normalizeLoginError(loginError),
+      });
+      setError(normalizeLoginError(loginError));
     } finally {
       setLoading(false);
     }
-  };
+  }, [setAuthenticated, signMessageAsync, syncProfile]);
 
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close();
-    };
-  }, []);
+  const handleLogin = useCallback(async () => {
+    setError('');
 
-  useEffect(() => {
-    if (isAuthenticated && isDialogOpen) {
-      closeDialog();
+    try {
+      const approvedAddress = await connectRelayWallet({
+        mode: 'login',
+      });
+      await runLogin(approvedAddress);
+    } catch (connectError) {
+      setError(normalizeLoginError(connectError));
     }
-  }, [isAuthenticated, isDialogOpen]);
+  }, [connectRelayWallet, runLogin]);
 
   useEffect(() => {
     if (!isAvatarMenuOpen) {
@@ -248,7 +173,14 @@ export function HeaderLoginButton() {
         <div className="relative" ref={avatarMenuRef}>
           <button
             type="button"
-            className={`inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-slate-200 text-xs font-semibold text-slate-600 transition hover:border-sky-300 ${resolvedAvatarUrl ? 'bg-white' : 'bg-gradient-to-br from-slate-100 to-slate-200'}`}
+            className="t-tiny inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full font-semibold transition"
+            style={{
+              background: resolvedAvatarUrl
+                ? 'var(--ink-2)'
+                : 'linear-gradient(135deg, var(--signal-400), var(--arc-400))',
+              border: '1px solid var(--ink-5)',
+              color: resolvedAvatarUrl ? 'var(--haze-2)' : 'var(--ink-0)',
+            }}
             aria-label="User menu"
             aria-haspopup="menu"
             aria-expanded={isAvatarMenuOpen}
@@ -262,20 +194,44 @@ export function HeaderLoginButton() {
           </button>
 
           {isAvatarMenuOpen ? (
-            <div className="absolute right-0 top-full z-[150] mt-2 w-44 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+            <div
+              className="absolute right-0 top-full z-[150] mt-2 w-44 p-2"
+              style={{
+                background: 'var(--ink-2)',
+                border: '1px solid var(--ink-5)',
+                borderRadius: 'var(--r-md)',
+                boxShadow: 'var(--shadow-lg)',
+              }}
+            >
               <Link
                 to="/profile"
-                className="block rounded-lg px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                className="t-small c-2 block rounded-[var(--r-sm)] px-3 py-2 font-medium transition"
                 onClick={() => setIsAvatarMenuOpen(false)}
+                onMouseEnter={event => {
+                  event.currentTarget.style.background = 'var(--ink-3)';
+                  event.currentTarget.style.color = 'var(--haze-1)';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.background = 'transparent';
+                  event.currentTarget.style.color = 'var(--haze-2)';
+                }}
               >
                 Profile
               </Link>
               <button
                 type="button"
-                className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
+                className="t-small c-2 mt-1 w-full rounded-[var(--r-sm)] px-3 py-2 text-left font-medium transition"
                 onClick={() => {
                   setIsAvatarMenuOpen(false);
-                  logout();
+                  void handleLogout();
+                }}
+                onMouseEnter={event => {
+                  event.currentTarget.style.background = 'var(--ink-3)';
+                  event.currentTarget.style.color = 'var(--haze-1)';
+                }}
+                onMouseLeave={event => {
+                  event.currentTarget.style.background = 'transparent';
+                  event.currentTarget.style.color = 'var(--haze-2)';
                 }}
               >
                 Logout
@@ -292,78 +248,19 @@ export function HeaderLoginButton() {
   }
 
   return (
-    <>
+    <div className="flex flex-col items-end gap-1">
       <Button
         type="button"
+        variant="secondary"
+        size="sm"
         onClick={() => {
-          void startQrLogin();
+          void handleLogin();
         }}
-        className="bg-gradient-to-r from-sky-600 to-cyan-500 text-white hover:from-sky-500 hover:to-cyan-400"
+        disabled={loading}
       >
-        Login with Chainora Card
+        {loading ? 'Signing...' : 'Login with Chainora Card'}
       </Button>
-
-      {isDialogOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/55 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-sky-500">Chainora Card Login</p>
-                <h2 className="mt-2 text-xl font-bold text-slate-900">Scan and sign with your card</h2>
-              </div>
-              <button
-                type="button"
-                className="rounded-full p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                aria-label="Close login dialog"
-                onClick={closeDialog}
-              >
-                x
-              </button>
-            </div>
-
-            <div className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-              <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Status</p>
-              <p className="mt-2 text-sm font-semibold text-sky-700">
-                {loading ? 'Preparing QR...' : (statusMessage ?? 'Scan QR to continue.')}
-              </p>
-            </div>
-
-            <div className="mt-5 grid min-h-[280px] place-items-center">
-              {isLoginFlowInProgress ? (
-                <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-sky-50 p-4 text-center text-sm font-semibold text-sky-700 ring-1 ring-sky-200">
-                  QR already scanned.
-                  <br />
-                  Continue on your phone and tap your card.
-                </div>
-              ) : qrImageUrl ? (
-                <img src={qrImageUrl} alt="Login QR" className="h-[260px] w-[260px] rounded-xl object-contain ring-1 ring-slate-200" />
-              ) : (
-                <div className="flex h-[260px] w-[260px] items-center justify-center rounded-xl bg-slate-100 text-center text-sm text-slate-500">
-                  {loading ? 'Preparing QR...' : 'Could not create QR. Please refresh.'}
-                </div>
-              )}
-            </div>
-
-            {error ? <p className="mt-4 text-sm font-medium text-rose-600">{error}</p> : null}
-
-            <div className="mt-5 flex items-center justify-end gap-3">
-              <Button type="button" variant="ghost" onClick={closeDialog}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  void startQrLogin();
-                }}
-                disabled={loading || isLoginFlowInProgress}
-              >
-                {loading ? 'Refreshing...' : 'Refresh QR'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </>
+      {error ? <p className="t-tiny c-risk font-medium">{error}</p> : null}
+    </div>
   );
 }

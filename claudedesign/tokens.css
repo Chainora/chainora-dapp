@@ -1,0 +1,308 @@
+/* ============================================================
+   iRosca Design System — Tokens
+   A dark-first design system for an on-chain ROSCA protocol.
+   ============================================================ */
+
+/* ---------- Type: fonts ----------
+   Crypto-native triad, full sans. Full Vietnamese support,
+   tested at display sizes for stacked diacritic rendering.
+   · Unbounded   — heavy geometric display sans. The loud voice.
+   · Geist       — the quiet workhorse sans from Vercel; used across web3.
+   · Geist Mono  — for addresses, hashes, amounts (tabular numerals). */
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* ---------- Palette: Ink (surfaces) ---------- */
+  /* Dark, near-black surfaces with a faint blue undertone. */
+  --ink-0:   #05070d;  /* deepest — page background */
+  --ink-1:   #0a0e17;  /* canvas */
+  --ink-2:   #11161f;  /* card surface */
+  --ink-3:   #171c27;  /* raised surface */
+  --ink-4:   #1e2431;  /* hover / input */
+  --ink-5:   #272e3e;  /* subtle border */
+  --ink-6:   #384053;  /* strong border */
+
+  /* ---------- Palette: Haze (text on dark) ---------- */
+  --haze-0:  #ffffff;
+  --haze-1:  #e8ecf3;  /* primary text */
+  --haze-2:  #b6bdcc;  /* secondary text */
+  --haze-3:  #7a829a;  /* tertiary / captions */
+  --haze-4:  #525b73;  /* disabled */
+
+  /* ---------- Palette: Signal (brand: electric blue → cyan) ---------- */
+  --signal-50:  #e8f4ff;
+  --signal-100: #c9e6ff;
+  --signal-200: #8dceff;
+  --signal-300: #4fb4ff;
+  --signal-400: #2897ff;  /* primary accent */
+  --signal-500: #0a7cf2;  /* default brand */
+  --signal-600: #005fd6;
+  --signal-700: #0049a8;
+  --signal-800: #063174;
+  --signal-900: #051b42;
+
+  /* ---------- Palette: Arc (secondary accent: cyan, for contrast / halo) ---------- */
+  --arc-300: #5fe7ff;
+  --arc-400: #22d3ee;
+  --arc-500: #06b6d4;
+
+  /* ---------- Status ---------- */
+  --ok-300:   #6ee7b7;   /* success text */
+  --ok-500:   #10b981;
+  --ok-bg:    rgba(16,185,129,0.12);
+
+  --warn-300: #fcd34d;
+  --warn-500: #f59e0b;
+  --warn-bg:  rgba(245,158,11,0.12);
+
+  --risk-300: #fca5a5;
+  --risk-500: #ef4444;
+  --risk-bg:  rgba(239,68,68,0.12);
+
+  /* ---------- Light mode mirror (for select surfaces) ---------- */
+  --paper:    #f7f8fb;
+  --paper-2:  #eef1f6;
+
+  /* ---------- Radii ---------- */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-2xl: 28px;
+  --r-pill: 999px;
+
+  /* ---------- Spacing (4px base, tight for data density) ---------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-20: 80px;
+
+  /* ---------- Elevation ---------- */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0,0,0,0.5);
+  --shadow-lg: 0 24px 60px -20px rgba(0,0,0,0.7);
+  --shadow-signal: 0 0 0 1px rgba(40,151,255,0.25), 0 20px 60px -20px rgba(40,151,255,0.45);
+  --glow-signal: 0 0 80px -10px rgba(40,151,255,0.55);
+  --glow-arc:    0 0 60px -10px rgba(34,211,238,0.45);
+
+  /* ---------- Type ---------- */
+  --font-display: 'Unbounded', 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* ---------- Motion ---------- */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 140ms;
+  --dur-med: 260ms;
+  --dur-slow: 520ms;
+}
+
+/* ---------- Base reset (scoped, light) ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--ink-0);
+  color: var(--haze-1);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Type utilities ---------- */
+.t-display {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.92;
+  font-size: clamp(48px, 8vw, 112px);
+  font-optical-sizing: auto;
+}
+.t-display em { font-style: normal; font-weight: 500; color: var(--signal-300); }
+
+.t-h1 { font-size: 44px; line-height: 1.08; font-weight: 700; letter-spacing: -0.02em; }
+.t-h2 { font-size: 32px; line-height: 1.14; font-weight: 700; letter-spacing: -0.015em; }
+.t-h3 { font-size: 22px; line-height: 1.25; font-weight: 600; letter-spacing: -0.005em; }
+.t-h4 { font-size: 17px; line-height: 1.3;  font-weight: 600; }
+
+.t-body  { font-size: 15px; line-height: 1.55; }
+.t-small { font-size: 13px; line-height: 1.5; }
+.t-tiny  { font-size: 11px; line-height: 1.35; }
+
+.t-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--haze-3);
+}
+
+.t-mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
+
+.t-num {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+}
+
+.t-serif { font-family: var(--font-display); }
+
+/* ---------- Utility: colors ---------- */
+.c-1 { color: var(--haze-1); }
+.c-2 { color: var(--haze-2); }
+.c-3 { color: var(--haze-3); }
+.c-signal { color: var(--signal-400); }
+.c-arc { color: var(--arc-400); }
+.c-ok { color: var(--ok-300); }
+.c-warn { color: var(--warn-300); }
+.c-risk { color: var(--risk-300); }
+
+/* ---------- Surfaces ---------- */
+.s-0 { background: var(--ink-0); }
+.s-1 { background: var(--ink-1); }
+.s-2 { background: var(--ink-2); }
+.s-3 { background: var(--ink-3); }
+
+.card {
+  background: var(--ink-2);
+  border: 1px solid var(--ink-5);
+  border-radius: var(--r-xl);
+}
+.card-raised {
+  background: linear-gradient(180deg, var(--ink-3), var(--ink-2));
+  border: 1px solid var(--ink-5);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-md);
+}
+
+/* hairline divider */
+.hr { height: 1px; background: var(--ink-5); border: 0; }
+
+/* ---------- Buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 16px;
+  border-radius: var(--r-md);
+  font-family: var(--font-sans);
+  font-size: 14px; font-weight: 600;
+  letter-spacing: -0.005em;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-med) var(--ease-out);
+  white-space: nowrap;
+}
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+  background: var(--haze-1);
+  color: var(--ink-0);
+  border-color: var(--haze-1);
+}
+.btn-primary:hover { background: #fff; }
+
+.btn-signal {
+  background: var(--signal-500);
+  color: white;
+  border-color: var(--signal-400);
+  box-shadow: 0 0 0 1px rgba(40,151,255,0.4), 0 12px 40px -15px rgba(40,151,255,0.8);
+}
+.btn-signal:hover { background: var(--signal-400); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--haze-1);
+  border-color: var(--ink-6);
+}
+.btn-ghost:hover { background: var(--ink-3); border-color: var(--haze-3); }
+
+.btn-sm { height: 32px; padding: 0 12px; font-size: 13px; border-radius: var(--r-sm); }
+.btn-lg { height: 48px; padding: 0 22px; font-size: 15px; border-radius: var(--r-lg); }
+
+/* ---------- Chips / Pills ---------- */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 24px; padding: 0 10px;
+  border-radius: var(--r-pill);
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--ink-5);
+  background: var(--ink-3);
+  color: var(--haze-2);
+}
+.chip-ok    { background: var(--ok-bg);   color: var(--ok-300);   border-color: rgba(16,185,129,0.4); }
+.chip-warn  { background: var(--warn-bg); color: var(--warn-300); border-color: rgba(245,158,11,0.4); }
+.chip-risk  { background: var(--risk-bg); color: var(--risk-300); border-color: rgba(239,68,68,0.4); }
+.chip-signal{ background: rgba(40,151,255,0.12); color: var(--signal-300); border-color: rgba(40,151,255,0.4); }
+.chip-mono  { font-family: var(--font-mono); font-weight: 500; letter-spacing: -0.01em; }
+
+/* ---------- Inputs ---------- */
+.input {
+  height: 40px;
+  width: 100%;
+  padding: 0 14px;
+  background: var(--ink-1);
+  color: var(--haze-1);
+  border: 1px solid var(--ink-5);
+  border-radius: var(--r-md);
+  font: inherit;
+  transition: border-color var(--dur-fast) var(--ease-out),
+              box-shadow var(--dur-fast) var(--ease-out);
+}
+.input::placeholder { color: var(--haze-4); }
+.input:focus {
+  outline: 0;
+  border-color: var(--signal-400);
+  box-shadow: 0 0 0 4px rgba(40,151,255,0.15);
+}
+
+/* Hide number-input spinner arrows (used in DurationInput composite). */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
+/* ---------- Meters / Bars ---------- */
+.bar { height: 6px; background: var(--ink-4); border-radius: var(--r-pill); overflow: hidden; }
+.bar > i {
+  display: block; height: 100%;
+  background: linear-gradient(90deg, var(--signal-500), var(--arc-400));
+  border-radius: inherit;
+}
+
+/* ---------- Grid scaffolding ---------- */
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 24px; }
+.grid { display: grid; gap: 24px; }
+
+/* ---------- Decorative ---------- */
+.grid-lines {
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.aurora::before {
+  content: '';
+  position: absolute; inset: -20% -10% auto auto;
+  width: 60%; height: 80%;
+  background: radial-gradient(closest-side, rgba(40,151,255,0.35), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* selection */
+::selection { background: var(--signal-500); color: white; }

@@ -90,12 +90,15 @@ export function PhaseCountdown({
   if (variant === 'hero') {
     return (
       <div className="flex flex-wrap items-end justify-between gap-2">
-        <p className="font-mono text-3xl font-black leading-none tracking-tight text-slate-900 md:text-4xl">
+        <p
+          className="t-mono c-1 text-3xl font-black leading-none md:text-4xl"
+          style={{ fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}
+        >
           {formatSeconds(remainingSeconds)}
         </p>
         <div className="space-y-1 pb-0.5 text-right">
           <StatusBadge label={countdownLabel || 'N/A'} tone={tone} />
-          <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <p className="t-label" style={{ fontSize: '10px' }}>
             {remainingSeconds > 0 ? 'remaining' : 'time up'}
           </p>
         </div>
@@ -107,7 +110,7 @@ export function PhaseCountdown({
     <div className="inline-flex items-center gap-2">
       <StatusBadge label={countdownLabel || 'N/A'} tone={tone} />
       {remainingSeconds > 0 ? (
-        <span className="text-xs font-medium text-slate-500">{formatSeconds(remainingSeconds)} remaining</span>
+        <span className="t-tiny c-3 t-mono font-medium">{formatSeconds(remainingSeconds)} remaining</span>
       ) : null}
     </div>
   );

@@ -3,7 +3,7 @@ import { getAddress, isAddress } from 'viem';
 
 import { fromInitAddress, toInitAddress } from '../components/UserDetail';
 import { chainoraApiBase } from '../configs/api';
-import { refreshAuthToken } from '../services/authQrFlow';
+import { refreshAuthToken } from '../services/authService';
 import { fetchAuthProfile, invalidateProfileCache } from '../services/profileService';
 
 type AuthState = {
@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshInFlightRef = useRef<Promise<string> | null>(null);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    const raw = window.sessionStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) {
       return;
     }
@@ -120,7 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAvatarUrlState(parsed.avatarUrl);
       }
     } catch {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
+      window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
     }
   }, []);
 
@@ -141,13 +141,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsername(nextState.username ?? '');
     setAvatarUrlState(nextState.avatarUrl ?? '');
     invalidateProfileCache();
-    window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextState));
+    window.sessionStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(nextState));
   };
 
   const setAvatarUrl = useCallback((next: string) => {
     const normalized = next.trim();
     setAvatarUrlState(normalized);
-    window.localStorage.setItem(
+    window.sessionStorage.setItem(
       AUTH_STORAGE_KEY,
       JSON.stringify({
         token,
@@ -173,7 +173,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     usernameRef.current = '';
     avatarUrlRef.current = '';
     invalidateProfileCache();
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    window.sessionStorage.removeItem(AUTH_STORAGE_KEY);
   };
 
   useEffect(() => {
@@ -262,7 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUsername(normalizedUsername);
     setAvatarUrlState(normalizedAvatarUrl);
 
-    window.localStorage.setItem(
+    window.sessionStorage.setItem(
       AUTH_STORAGE_KEY,
       JSON.stringify({
         token,

@@ -110,13 +110,23 @@ function CreateGroupIcon({ name, className = 'h-4 w-4' }: { name: CreateGroupIco
 
 export function IconBadge({
   icon,
-  tone = 'bg-slate-100 text-slate-600',
+  tone,
 }: {
   icon: CreateGroupIconName;
   tone?: string;
 }) {
+  // Tone is a Tailwind class string from legacy callers; map known cases to design tokens.
+  const fallbackStyle = {
+    background: 'rgba(40,151,255,0.12)',
+    color: 'var(--signal-300)',
+    border: '1px solid rgba(40,151,255,0.4)',
+  } as const;
+
   return (
-    <span className={`inline-flex h-6 w-6 items-center justify-center rounded-md ${tone}`}>
+    <span
+      className={`inline-flex h-6 w-6 items-center justify-center rounded-[var(--r-sm)] ${tone ?? ''}`}
+      style={tone ? undefined : fallbackStyle}
+    >
       <CreateGroupIcon name={icon} />
     </span>
   );
@@ -140,13 +150,13 @@ export function FieldLabel({
 
   if (htmlFor) {
     return (
-      <label htmlFor={htmlFor} className="mb-2 block text-sm font-semibold text-slate-700">
+      <label htmlFor={htmlFor} className="t-small c-2 mb-2 block font-semibold">
         {content}
       </label>
     );
   }
 
-  return <p className="mb-2 text-sm font-semibold text-slate-700">{content}</p>;
+  return <p className="t-small c-2 mb-2 font-semibold">{content}</p>;
 }
 
 export function DurationInput(props: {
@@ -181,9 +191,9 @@ export function DurationInput(props: {
             value={props.value.days}
             onChange={event => updateDigitsOnly('days', event.target.value)}
             placeholder={`${props.inputHint}`}
-            className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-9 text-slate-900 outline-none ring-sky-200 transition focus:ring"
+            className="input pr-12"
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-500">days</span>
+          <span className="t-tiny c-3 pointer-events-none absolute inset-y-0 right-3 flex items-center font-semibold">days</span>
         </div>
         <div className="relative">
           <input
@@ -193,9 +203,9 @@ export function DurationInput(props: {
             value={props.value.hours}
             onChange={event => updateDigitsOnly('hours', event.target.value)}
             placeholder={`${props.inputHint}`}
-            className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-9 text-slate-900 outline-none ring-sky-200 transition focus:ring"
+            className="input pr-12"
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-500">hours</span>
+          <span className="t-tiny c-3 pointer-events-none absolute inset-y-0 right-3 flex items-center font-semibold">hours</span>
         </div>
         <div className="relative">
           <input
@@ -205,9 +215,9 @@ export function DurationInput(props: {
             value={props.value.minutes}
             onChange={event => updateDigitsOnly('minutes', event.target.value)}
             placeholder={`${props.inputHint}`}
-            className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-11 text-slate-900 outline-none ring-sky-200 transition focus:ring"
+            className="input pr-12"
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-500">mins</span>
+          <span className="t-tiny c-3 pointer-events-none absolute inset-y-0 right-3 flex items-center font-semibold">mins</span>
         </div>
         <div className="relative">
           <input
@@ -217,13 +227,13 @@ export function DurationInput(props: {
             value={props.value.seconds}
             onChange={event => updateDigitsOnly('seconds', event.target.value)}
             placeholder={`${props.inputHint}`}
-            className="w-full rounded-2xl border border-slate-200 px-3 py-2 pr-11 text-slate-900 outline-none ring-sky-200 transition focus:ring"
+            className="input pr-12"
           />
-          <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs font-semibold text-slate-500">secs</span>
+          <span className="t-tiny c-3 pointer-events-none absolute inset-y-0 right-3 flex items-center font-semibold">secs</span>
         </div>
       </div>
-      <p className="mt-2 text-xs text-slate-500">{props.helper}</p>
-      {props.error ? <p className="mt-1 text-sm text-rose-600">{props.error}</p> : null}
+      <p className="t-tiny c-3 mt-2">{props.helper}</p>
+      {props.error ? <p className="t-tiny c-risk mt-1">{props.error}</p> : null}
     </div>
   );
 }

@@ -1,13 +1,13 @@
 export function DetailSkeleton() {
   return (
-    <section className="mx-auto max-w-6xl space-y-4">
-      <div className="h-10 w-36 animate-pulse rounded-xl bg-slate-200" />
-      <div className="h-72 animate-pulse rounded-3xl bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200" />
+    <section className="mx-auto w-full max-w-[1280px] space-y-4 px-6 py-6">
+      <div className="skeleton h-10 w-36" />
+      <div className="skeleton h-72 w-full" style={{ borderRadius: 'var(--r-2xl)' }} />
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="h-72 animate-pulse rounded-2xl bg-slate-200" />
-        <div className="h-72 animate-pulse rounded-2xl bg-slate-200" />
+        <div className="skeleton h-72 w-full" style={{ borderRadius: 'var(--r-xl)' }} />
+        <div className="skeleton h-72 w-full" style={{ borderRadius: 'var(--r-xl)' }} />
       </div>
-      <div className="h-64 animate-pulse rounded-2xl bg-slate-200" />
+      <div className="skeleton h-64 w-full" style={{ borderRadius: 'var(--r-xl)' }} />
     </section>
   );
 }
