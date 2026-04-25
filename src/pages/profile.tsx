@@ -28,6 +28,7 @@ type ProfileResponse = {
 
 const RELAYER_USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,20}$/;
 const PLACEHOLDER_USERNAME = 'Chainora User';
+const PROFILE_AUTH_ERROR_PATTERN = /Load profile failed:\s*(401|403)\b/;
 
 const normalizeProfileUsername = (value: string | undefined): string => {
   const trimmed = String(value ?? '').trim();
@@ -153,8 +154,11 @@ export function ProfilePage() {
           setShowRegisterForm(false);
         }
       } catch (err) {
-        setProfile(null);
-        setError(err instanceof Error ? err.message : 'Unable to load profile');
+        const message = err instanceof Error ? err.message : 'Unable to load profile';
+        if (PROFILE_AUTH_ERROR_PATTERN.test(message)) {
+          setProfile(null);
+        }
+        setError(message);
       } finally {
         if (showGlobalLoading) {
           setLoading(false);
@@ -302,7 +306,20 @@ export function ProfilePage() {
       return;
     }
 
-    const profileAddress = getAddress(profile.address.trim());
+    const rawProfileAddress = profile.address.trim();
+    if (!rawProfileAddress || !isAddress(rawProfileAddress)) {
+      setError('Profile wallet address is invalid. Please refresh and try again.');
+      return;
+    }
+
+    let profileAddress: `0x${string}`;
+    try {
+      profileAddress = getAddress(rawProfileAddress);
+    } catch {
+      setError('Profile wallet address is invalid. Please refresh and try again.');
+      return;
+    }
+
     if (relayAddress.toLowerCase() !== profileAddress.toLowerCase()) {
       setError('Connected wallet does not match profile wallet.');
       return;

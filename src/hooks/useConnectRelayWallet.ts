@@ -66,7 +66,7 @@ export const useConnectRelayWallet = () => {
     });
 
     if (forceReconnect) {
-      console.info('[wallet][relay] relay.connect.force_reconnect', { mode });
+      walletDebugLog.info('connectRelayWallet.forceReconnect', { mode });
       walletRelayBrowserClient.disconnect();
       walletDebugLog.info('connectRelayWallet.forceReconnect.applied', {
         mode,
@@ -84,7 +84,7 @@ export const useConnectRelayWallet = () => {
 
       if (Number.isFinite(targetChainId) && targetChainId > 0) {
         try {
-          console.info('[wallet][relay] relay.connect.start', {
+          walletDebugLog.info('connectRelayWallet.resume.start', {
             mode,
             strategy: 'resume',
             chainId: targetChainId,
@@ -92,7 +92,7 @@ export const useConnectRelayWallet = () => {
           const resumedAddress = await walletRelayBrowserClient.connect(targetChainId, { intent: mode });
           const normalizedResumed = resolveConnectedAccount(resumedAddress);
           if (normalizedResumed) {
-            console.info('[wallet][relay] relay.connect.approved', {
+            walletDebugLog.info('connectRelayWallet.resume.approved', {
               mode,
               strategy: 'resume',
               address: normalizedResumed,
@@ -104,7 +104,6 @@ export const useConnectRelayWallet = () => {
             return normalizedResumed;
           }
         } catch (resumeError) {
-          console.warn('[wallet][relay] session resume failed', resumeError);
           walletDebugLog.warn('connectRelayWallet.resume.failed', {
             mode,
             message: resumeError instanceof Error ? resumeError.message : String(resumeError),
@@ -120,7 +119,6 @@ export const useConnectRelayWallet = () => {
       try {
         interwovenDisconnect();
       } catch (disconnectError) {
-        console.warn('[wallet][relay] interwoven disconnect failed', disconnectError);
         walletDebugLog.warn('connectRelayWallet.disconnect.interwoven_failed', {
           mode,
           message: disconnectError instanceof Error ? disconnectError.message : String(disconnectError),
@@ -130,7 +128,6 @@ export const useConnectRelayWallet = () => {
       try {
         await disconnectAsync();
       } catch (disconnectError) {
-        console.warn('[wallet][relay] wagmi disconnect failed', disconnectError);
         walletDebugLog.warn('connectRelayWallet.disconnect.wagmi_failed', {
           mode,
           message: disconnectError instanceof Error ? disconnectError.message : String(disconnectError),
@@ -152,7 +149,7 @@ export const useConnectRelayWallet = () => {
     }
 
     walletRelayBrowserClient.setNextConnectIntent(mode);
-    console.info('[wallet][relay] relay.connect.start', {
+    walletDebugLog.info('connectRelayWallet.newSession.start', {
       mode,
       strategy: 'new-session',
       chainId,
@@ -176,10 +173,13 @@ export const useConnectRelayWallet = () => {
             try {
               await walletRelayBrowserClient.connect(targetChainId, { intent: mode });
             } catch (resumeError) {
-              console.warn('[wallet][relay] relay.connect.resume_after_already_connected.failed', resumeError);
+              walletDebugLog.warn('connectRelayWallet.resume_after_already_connected.failed', {
+                mode,
+                message: resumeError instanceof Error ? resumeError.message : String(resumeError),
+              });
             }
           }
-          console.info('[wallet][relay] relay.connect.already_connected', {
+          walletDebugLog.info('connectRelayWallet.alreadyConnected', {
             mode,
             address: currentAddress,
           });
@@ -211,7 +211,7 @@ export const useConnectRelayWallet = () => {
       throw new Error('Wallet connected but no valid relay account was returned.');
     }
 
-    console.info('[wallet][relay] relay.connect.approved', {
+    walletDebugLog.info('connectRelayWallet.newSession.approved', {
       mode,
       strategy: 'new-session',
       address: accountAddress,

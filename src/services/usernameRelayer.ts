@@ -80,33 +80,6 @@ export async function createUsernameRelayerPayload(address: string, username: st
   return normalizeEnvelope<UnsignedRelayerPayload>(json);
 }
 
-export async function createPrimaryUsernameRelayerPayload(address: string, username: string): Promise<UnsignedRelayerPayload> {
-  const response = await fetch(`${chainoraApiBase}/v1/relayer/primary/payload`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ address, username }),
-  });
-
-  if (!response.ok) {
-    const detail = await readApiErrorMessage(response);
-    throw new Error(detail || `Create primary relayer payload failed: ${response.status}`);
-  }
-
-  const json = (await response.json()) as unknown;
-  return normalizeEnvelope<UnsignedRelayerPayload>(json);
-}
-
-export type RelayerWSEvent = {
-  status: string;
-  sessionId: string;
-  txHash?: string;
-  error?: string;
-  username?: string;
-  address?: string;
-};
-
 const submitRelayerRequest = async (
   endpoint: string,
   payload: SubmitUsernameRelayerRequest,
@@ -131,32 +104,3 @@ const submitRelayerRequest = async (
 export const submitUsernameRelayerRequest = (payload: SubmitUsernameRelayerRequest): Promise<SubmitUsernameRelayerResponse> => {
   return submitRelayerRequest(`${chainoraApiBase}/v1/relayer/register`, payload);
 };
-
-export const submitPrimaryUsernameRelayerRequest = (
-  payload: SubmitUsernameRelayerRequest,
-): Promise<SubmitUsernameRelayerResponse> => {
-  return submitRelayerRequest(`${chainoraApiBase}/v1/relayer/primary/select`, payload);
-};
-
-export function openUsernameRelayerSocket(
-  sessionId: string,
-  onMessage: (event: RelayerWSEvent) => void,
-  onState: (state: 'open' | 'closed' | 'error') => void,
-): WebSocket {
-  const endpoint = `${chainoraApiBase.replace(/^http/i, 'ws')}/v1/relayer/ws/${encodeURIComponent(sessionId)}`;
-  const ws = new WebSocket(endpoint);
-
-  ws.onopen = () => onState('open');
-  ws.onerror = () => onState('error');
-  ws.onclose = () => onState('closed');
-  ws.onmessage = evt => {
-    try {
-      const payload = JSON.parse(String(evt.data)) as RelayerWSEvent;
-      onMessage(payload);
-    } catch {
-      // Ignore malformed websocket payload.
-    }
-  };
-
-  return ws;
-}
